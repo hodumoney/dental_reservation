@@ -367,23 +367,61 @@ function ClinicApp() {
   // ── 시트 연동 설정 ──
   const [cfg, setCfg] = useState(() => loadCfg()); // { url, token }
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [syncState, setSyncState] = useState("local"); // local | loading | ok | error
+  const [syncState, setSyncState] = useState("local"); // local | loading | ok | error | saving
   const connected = !!(cfg && cfg.url);
+
+  // 자동 갱신을 잠시 멈춰야 하는 상황(모달/폼 편집 중)을 추적
+  const busyRef = useRef(false);
+  const setBusy = v => {
+    busyRef.current = v;
+  };
+  // 서버로 보냈지만 아직 확정 안 된 내 변경들 (id -> appt | {__deleted:true})
+  const pendingRef = useRef({});
+  const pendingDayRef = useRef({}); // 일별상태 대기분 (date -> status|"")
+
   const showToast = m => {
     clearTimeout(toastRef.current);
     setToast(m);
-    toastRef.current = setTimeout(() => setToast(null), 2200);
+    toastRef.current = setTimeout(() => setToast(null), 2600);
   };
 
-  // 서버에서 전체 데이터 불러오기
-  const pull = useCallback(async () => {
+  // 서버 데이터에 "내 대기 변경"을 덮어씌워 병합 (입력분 보존)
+  const mergePending = serverAppts => {
+    const pend = pendingRef.current;
+    const map = {};
+    (serverAppts || []).forEach(a => {
+      map[String(a.id)] = a;
+    });
+    Object.keys(pend).forEach(id => {
+      const v = pend[id];
+      if (v && v.__deleted) delete map[id];else if (v) map[id] = v; // 내 최신 로컬본 우선
+    });
+    return Object.values(map);
+  };
+  const mergePendingDay = serverDay => {
+    const out = {
+      ...(serverDay || {})
+    };
+    const pd = pendingDayRef.current;
+    Object.keys(pd).forEach(d => {
+      const s = pd[d];
+      if (s) out[d] = s;else delete out[d];
+    });
+    return out;
+  };
+
+  // 서버에서 전체 데이터 불러오기 (편집 중이면 건너뜀)
+  const pull = useCallback(async ({
+    force
+  } = {}) => {
     if (!cfg || !cfg.url) return;
+    if (busyRef.current && !force) return; // 입력/편집 중엔 화면 덮어쓰지 않음
     try {
       const data = await apiGet(cfg);
       if (data && data.ok) {
-        setAppts(Array.isArray(data.appts) ? data.appts : []);
-        setDayStatus(data.dayStatus || {});
-        setSyncState("ok");
+        setAppts(mergePending(Array.isArray(data.appts) ? data.appts : []));
+        setDayStatus(mergePendingDay(data.dayStatus || {}));
+        setSyncState(Object.keys(pendingRef.current).length ? "saving" : "ok");
       } else {
         setSyncState("error");
       }
@@ -399,33 +437,65 @@ function ClinicApp() {
       return;
     }
     setSyncState("loading");
-    pull();
-    const t = setInterval(pull, 15000);
+    pull({
+      force: true
+    });
+    const t = setInterval(() => pull(), 15000);
     return () => clearInterval(t);
   }, [cfg, pull]);
 
-  // 서버 쓰기 헬퍼: 실패해도 로컬은 이미 반영돼 있으니 토스트만
+  // 서버 쓰기 헬퍼: 대기목록에 올리고, 성공하면 확정(대기 해제)
   const push = async payload => {
     if (!cfg || !cfg.url) return {
       ok: true
     }; // 로컬 모드
+    // 대기 등록
+    if (payload.action === "add" || payload.action === "update") {
+      pendingRef.current[String(payload.appt.id)] = payload.appt;
+    } else if (payload.action === "cancel" || payload.action === "delete") {
+      pendingRef.current[String(payload.id)] = {
+        __deleted: true
+      };
+    } else if (payload.action === "setDayStatus") {
+      pendingDayRef.current[payload.date] = payload.status || "";
+    }
+    setSyncState("saving");
     try {
       const r = await apiPost(cfg, payload);
       if (!r || !r.ok) {
-        if (r && r.error === "capacity") showToast("그 시간대는 이미 3명이라 저장되지 않았어요");else showToast("시트 저장에 실패했어요");
-        pull(); // 서버 상태로 되돌림
+        if (r && r.error === "capacity") showToast("그 시간대는 이미 3명이라 저장되지 않았어요");else showToast("시트 저장에 실패했어요 (다시 시도해 주세요)");
+        // 실패분은 대기에서 제거하고 서버 상태로 되돌림
+        clearPending(payload);
+        setSyncState("error");
+        pull({
+          force: true
+        });
         return r || {
           ok: false
         };
       }
+      // 성공 → 대기 해제
+      clearPending(payload);
+      setSyncState(Object.keys(pendingRef.current).length ? "saving" : "ok");
       return r;
     } catch (e) {
-      showToast("시트 연결에 실패했어요");
+      showToast("시트 연결에 실패했어요 (네트워크 확인)");
+      clearPending(payload);
+      setSyncState("error");
       return {
         ok: false
       };
     }
   };
+  const clearPending = payload => {
+    if (payload.action === "add" || payload.action === "update") delete pendingRef.current[String(payload.appt.id)];else if (payload.action === "cancel" || payload.action === "delete") delete pendingRef.current[String(payload.id)];else if (payload.action === "setDayStatus") delete pendingDayRef.current[payload.date];
+  };
+
+  // 편집 중 자동 갱신 정지: 환자등록 탭 열림 / 설정 열림 / 일별예약 카드 모달 열림
+  const [dayEditing, setDayEditing] = useState(false);
+  useEffect(() => {
+    setBusy(settingsOpen || tab === 2 || dayEditing);
+  }, [settingsOpen, tab, dayEditing]);
   const addAppt = a => {
     const item = {
       ...a,
@@ -587,10 +657,10 @@ function ClinicApp() {
       fontWeight: 700,
       padding: "5px 10px",
       borderRadius: 999,
-      background: syncState === "ok" ? C.greenSoft : syncState === "error" ? C.redSoft : syncState === "loading" ? C.blueSoft : "#EEF0F2",
-      color: syncState === "ok" ? C.green : syncState === "error" ? C.red : syncState === "loading" ? C.blueDark : C.gray
+      background: syncState === "ok" ? C.greenSoft : syncState === "error" ? C.redSoft : syncState === "loading" || syncState === "saving" ? C.blueSoft : "#EEF0F2",
+      color: syncState === "ok" ? C.green : syncState === "error" ? C.red : syncState === "loading" || syncState === "saving" ? C.blueDark : C.gray
     }
-  }, syncState === "ok" ? "● 시트 연결됨" : syncState === "error" ? "● 연결 오류" : syncState === "loading" ? "● 불러오는 중" : "○ 로컬 모드"), /*#__PURE__*/React.createElement("button", {
+  }, syncState === "ok" ? "● 시트 연결됨" : syncState === "error" ? "● 저장 실패" : syncState === "saving" ? "● 저장 중…" : syncState === "loading" ? "● 불러오는 중" : "○ 로컬 모드"), /*#__PURE__*/React.createElement("button", {
     onClick: () => setSettingsOpen(true),
     title: "시트 연결 설정",
     style: {
@@ -648,9 +718,10 @@ function ClinicApp() {
     onUpdate: updateAppt,
     onRemove: id => {
       removeAppt(id);
-      showToast("삭제했어요");
+      showToast("예약을 취소했어요");
     },
     onAdd: openAdd,
+    onEditingChange: setDayEditing,
     onAttend: (id, v) => {
       updateAppt(id, {
         attended: v,
@@ -1571,6 +1642,7 @@ function DayTab({
   onUpdate,
   onRemove,
   onAdd,
+  onEditingChange,
   onAttend,
   onNoShow,
   onNextBooking,
@@ -1578,6 +1650,9 @@ function DayTab({
   onMove
 }) {
   const [editing, setEditing] = useState(null); // 수정 대상 예약
+  useEffect(() => {
+    if (onEditingChange) onEditingChange(!!editing);
+  }, [editing, onEditingChange]);
   const [dropSlot, setDropSlot] = useState(null);
   const dayList = useMemo(() => sortAppts(appts.filter(a => a.date === date)), [appts, date]);
   const status = dayStatus[date];
