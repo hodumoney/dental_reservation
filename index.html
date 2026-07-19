@@ -326,13 +326,19 @@ const emptyForm = {
 
 /* ══════════ 시트 연동 (Google Apps Script 웹앱) ══════════ */
 const CFG_KEY = "clinic_sheet_cfg";
+// 기본 연결값 (설정을 따로 저장하지 않아도 자동 연결)
+const DEFAULT_CFG = {
+  url: "https://script.google.com/macros/s/AKfycbz391L7TZVmHdN1vwaqz1HnAKmkz1NVIGepdrlJOedjBMRcQ2QEQeRVkfwvFlgTenb24w/exec",
+  token: "0418"
+};
 function loadCfg() {
   try {
     const s = window.localStorage.getItem(CFG_KEY);
-    return s ? JSON.parse(s) : null;
-  } catch (e) {
-    return null;
-  }
+    if (s) return JSON.parse(s); // 사용자가 설정에서 바꾼 값이 있으면 우선
+  } catch (e) {}
+  return DEFAULT_CFG.url ? {
+    ...DEFAULT_CFG
+  } : null; // 없으면 기본값으로 자동 연결
 }
 function saveCfg(cfg) {
   try {
