@@ -73,18 +73,22 @@ const SLOTS = buildSlots();
 const TEETH_UPPER = [18, 17, 16, 15, 14, 13, 12, 11, 21, 22, 23, 24, 25, 26, 27, 28];
 const TEETH_LOWER = [48, 47, 46, 45, 44, 43, 42, 41, 31, 32, 33, 34, 35, 36, 37, 38];
 
-/* 술식 카테고리 → 세부술식 → 단계 옵션
-   - 수술: 카테고리 자체가 다중 선택(세부술식을 여러 개 체크) → item.steps 에 저장, proc="수술"
-   - 크라운/신경치료: 단계 다중 선택 → item.steps
-   - 레진/인레이/검진: 단계 단일 선택 → item.step */
-const SURGERY_TYPES = ["발치", "뼈이식", "임플란트 1차", "임플란트 2차", "잇몸 수술", "치근단 절제술", "치아재식술"];
+/* 술식 구조 (모든 카테고리 다중 선택)
+   한 치료(item) = { cat, teeth[]/arch, procs:[ {proc, steps[]?, step?, kinds[]?, custom?} ] }
+   - procs: 카테고리 안에서 체크한 술식들 (다중)
+   - 각 proc 은 필요 시 상세옵션을 가짐:
+       · 다중 단계(MULTI): 신경치료·크라운
+       · 단일 단계(STEP): 레진·인레이·검진(기간)
+       · x-ray: 종류(다중)+시점
+       · 직접입력: custom 텍스트 */
+const SURGERY_TYPES = ["발치", "뼈이식", "임플란트 1차", "임플란트 2차", "잇몸 수술", "치근단 절제술", "치아재식술", "CAS", "LAS"];
 const PROC_CATS = {
-  수술: ["수술", "직접입력"],
-  // '수술' 선택 시 세부술식 다중, '직접입력' 선택 시 자유 입력
+  수술: [...SURGERY_TYPES, "직접입력"],
   충치치료: ["레진", "인레이", "신경치료", "크라운", "직접입력"],
   잇몸치료: ["스케일링", "큐렛", "직접입력"],
   드레싱: ["드레싱", "s-o", "직접입력"],
-  체크: ["수복물 검진", "턱관절 검진", "정기 검진", "x-ray 촬영", "직접입력"]
+  체크: ["수복물 검진", "턱관절 검진", "정기 검진", "x-ray 촬영", "직접입력"],
+  직접입력: ["직접입력"]
 };
 const CHECK_DATES = ["1일", "1주일", "2주일", "1달", "2달", "3달", "6달"];
 /* 단일 단계 선택 술식 */
@@ -95,9 +99,8 @@ const PROC_STEPS = {
   "턱관절 검진": CHECK_DATES,
   "정기 검진": CHECK_DATES
 };
-/* 다중 단계 선택 술식 (steps[] 로 저장) */
+/* 다중 단계 선택 술식 */
 const PROC_MULTI_STEPS = {
-  수술: SURGERY_TYPES,
   신경치료: ["시작", "근관세척", "근관충전", "canal nego", "CLM", "코어"],
   크라운: ["코어", "프렙", "임시치아", "인상채득", "딜리버리"]
 };
@@ -123,6 +126,10 @@ const CAT_STYLE = {
   체크: {
     color: C.orange,
     soft: C.orangeSoft
+  },
+  직접입력: {
+    color: C.gray,
+    soft: C.bg
   }
 };
 // 예약의 대표 진료 유형: 수술 > 체크(전부 체크일 때) > 일반진료
@@ -198,24 +205,24 @@ const fmtPhone = v => {
   if (n.length < 8) return `${n.slice(0, 3)}-${n.slice(3)}`;
   return `${n.slice(0, 3)}-${n.slice(3, 7)}-${n.slice(7)}`;
 };
+
+// 술식 1개(proc 객체 또는 구 item)의 표기
+const oneProc = p => {
+  if (!p) return "";
+  if (p.proc === "직접입력") return p.custom ? p.custom : "직접입력";
+  if (p.proc === "x-ray 촬영") {
+    const kinds = p.kinds && p.kinds.length ? p.kinds.join("·") : null;
+    return ["x-ray 촬영", kinds, p.step].filter(Boolean).join(" ");
+  }
+  if (p.steps && p.steps.length) return `${p.proc} ${p.steps.join("·")}`;
+  return p.step ? `${p.proc} ${p.step}` : p.proc;
+};
 const procFull = it => {
-  // 직접입력
-  if (it.proc === "직접입력") return it.custom ? it.custom : "직접입력";
-  // x-ray 촬영: "x-ray 촬영 panex·CT 1달"
-  if (it.proc === "x-ray 촬영") {
-    const kinds = it.kinds && it.kinds.length ? it.kinds.join("·") : null;
-    return ["x-ray 촬영", kinds, it.step].filter(Boolean).join(" ");
-  }
-  // 수술: proc="수술" → 선택한 세부 술식들만 표기 (예: "발치·뼈이식")
-  if (it.proc === "수술") {
-    return it.steps && it.steps.length ? it.steps.join("·") : "수술";
-  }
-  // 다중 단계 술식 (크라운/신경치료): "크라운 프렙·임시치아"
-  if (it.steps && it.steps.length) {
-    return `${it.proc} ${it.steps.join("·")}`;
-  }
-  // 단일 단계
-  return it.step ? `${it.proc} ${it.step}` : it.proc;
+  // 신 구조: procs[] 다중 술식
+  if (it.procs && it.procs.length) return it.procs.map(oneProc).join(", ");
+  // 구 구조 호환
+  if (it.proc === "수술") return it.steps && it.steps.length ? it.steps.join("·") : "수술";
+  return oneProc(it);
 };
 // 부위 표기: 아치(전악/상악/하악/턱관절) 우선, 없으면 치식. 체크(검진·x-ray)는 부위 생략
 const areaLabel = it => it.cat === "체크" ? "" : it.arch ? it.arch : it.teeth.length ? `#${it.teeth.join(" #")}` : "";
@@ -2461,57 +2468,71 @@ function EditModal({
   }))));
 }
 
-/* ══════════ 술식 선택기 (공용) ══════════ */
+/* ══════════ 술식 선택기 (공용) — 카테고리 안에서 술식 다중 선택 ══════════ */
 function ProcPicker({
   draft,
   setDraft,
   compact
 }) {
-  const isCustom = draft.proc === "직접입력";
-  const isXray = draft.proc === "x-ray 촬영";
-  const hasKinds = draft.kinds && draft.kinds.length > 0;
-  const multiSteps = draft.proc ? PROC_MULTI_STEPS[draft.proc] : null; // 다중 단계
-  const singleSteps = isXray ? hasKinds ? CHECK_DATES : null : draft.proc ? PROC_STEPS[draft.proc] : null; // 단일 단계
+  const cat = draft.cat;
+  const procs = draft.procs || [];
+  const isSelected = name => procs.some(p => p.proc === name);
+  const getProc = name => procs.find(p => p.proc === name);
+  const pickCat = c => setDraft(d => ({
+    ...d,
+    cat: d.cat === c ? "" : c,
+    procs: d.cat === c ? [] : []
+  }));
 
-  const pickCat = cat => setDraft(d => {
-    const on = d.cat === cat;
-    return {
+  // 술식 토글 (다중). 새로 켜면 기본 상세값 세팅
+  const toggleProc = name => setDraft(d => {
+    const cur = d.procs || [];
+    if (cur.some(p => p.proc === name)) return {
       ...d,
-      cat: on ? "" : cat,
-      proc: "",
-      step: null,
+      procs: cur.filter(p => p.proc !== name)
+    };
+    const np = {
+      proc: name,
       steps: [],
+      step: null,
       kinds: [],
       custom: ""
     };
-  });
-  const pickProc = p => setDraft(d => ({
-    ...d,
-    proc: d.proc === p ? "" : p,
-    step: null,
-    steps: [],
-    kinds: [],
-    custom: ""
-  }));
-  const toggleKind = k => setDraft(d => {
-    const cur = d.kinds || [];
     return {
       ...d,
+      procs: [...cur, np]
+    };
+  });
+  // 특정 술식의 상세 갱신
+  const updProc = (name, patch) => setDraft(d => ({
+    ...d,
+    procs: (d.procs || []).map(p => p.proc === name ? {
+      ...p,
+      ...patch
+    } : p)
+  }));
+  const toggleStepOf = (name, s) => {
+    const p = getProc(name);
+    const cur = p.steps || [];
+    updProc(name, {
+      steps: cur.includes(s) ? cur.filter(x => x !== s) : [...cur, s]
+    });
+  };
+  const setStepOf = (name, s) => {
+    const p = getProc(name);
+    updProc(name, {
+      step: p.step === s ? null : s
+    });
+  };
+  const toggleKindOf = (name, k) => {
+    const p = getProc(name);
+    const cur = p.kinds || [];
+    updProc(name, {
       kinds: cur.includes(k) ? cur.filter(x => x !== k) : [...cur, k],
       step: null
-    };
-  });
-  const toggleMulti = s => setDraft(d => {
-    const cur = d.steps || [];
-    return {
-      ...d,
-      steps: cur.includes(s) ? cur.filter(x => x !== s) : [...cur, s]
-    };
-  });
-  const pickSingle = s => setDraft(d => ({
-    ...d,
-    step: d.step === s ? null : s
-  }));
+    });
+  };
+  const st = cat ? CAT_STYLE[cat] : CAT_STYLE.충치치료;
   return /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
     style: {
       display: "grid",
@@ -2519,25 +2540,25 @@ function ProcPicker({
       gap: compact ? 6 : 8,
       marginBottom: 12
     }
-  }, Object.keys(PROC_CATS).map(cat => {
-    const on = draft.cat === cat;
-    const st = CAT_STYLE[cat];
+  }, Object.keys(PROC_CATS).map(c => {
+    const on = cat === c;
+    const cs = CAT_STYLE[c];
     return /*#__PURE__*/React.createElement("button", {
-      key: cat,
+      key: c,
       className: "chip",
-      onClick: () => pickCat(cat),
+      onClick: () => pickCat(c),
       style: {
         minWidth: 0,
         padding: compact ? "10px 0" : "12px 0",
         borderRadius: compact ? 10 : 13,
         fontSize: compact ? 12.5 : 14,
         fontWeight: 700,
-        background: on ? st.color : C.bg,
+        background: on ? cs.color : C.bg,
         color: on ? "#fff" : C.sub,
-        border: `1.5px solid ${on ? st.color : "transparent"}`
+        border: `1.5px solid ${on ? cs.color : "transparent"}`
       }
-    }, cat);
-  })), draft.cat && /*#__PURE__*/React.createElement("div", {
+    }, c);
+  })), cat && /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       flexWrap: "wrap",
@@ -2545,179 +2566,192 @@ function ProcPicker({
       marginBottom: 12,
       animation: "fade .2s ease"
     }
-  }, PROC_CATS[draft.cat].map(p => {
-    const on = draft.proc === p;
-    const st = CAT_STYLE[draft.cat];
-    const label = p === "수술" ? "수술 종류" : p;
+  }, PROC_CATS[cat].map(p => {
+    const on = isSelected(p);
     return /*#__PURE__*/React.createElement("button", {
       key: p,
       className: "chip",
-      onClick: () => pickProc(p),
+      onClick: () => toggleProc(p),
       style: {
         padding: compact ? "7px 12px" : "10px 15px",
         borderRadius: 999,
         fontSize: compact ? 12.5 : 13.5,
-        fontWeight: 600,
-        background: on ? st.soft : C.bg,
-        color: on ? st.color : C.sub,
+        fontWeight: 700,
+        background: on ? st.color : C.bg,
+        color: on ? "#fff" : C.sub,
         border: `1.5px solid ${on ? st.color : "transparent"}`
       }
-    }, label);
-  })), isCustom && /*#__PURE__*/React.createElement("div", {
-    style: {
-      background: C.bg,
-      borderRadius: 12,
-      padding: "12px",
-      marginBottom: 12,
-      animation: "fade .2s ease"
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 11.5,
-      fontWeight: 700,
-      color: C.gray,
-      marginBottom: 8
-    }
-  }, "직접 입력"), /*#__PURE__*/React.createElement("input", {
-    value: draft.custom || "",
-    onChange: e => setDraft(d => ({
-      ...d,
-      custom: e.target.value
-    })),
-    placeholder: "예: 지르코니아 크라운, 임시 접착 등",
-    style: {
-      ...inp,
-      background: "#fff"
-    }
-  })), isXray && /*#__PURE__*/React.createElement("div", {
-    style: {
-      background: C.bg,
-      borderRadius: 12,
-      padding: "12px",
-      marginBottom: 12,
-      animation: "fade .2s ease"
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 11.5,
-      fontWeight: 700,
-      color: C.gray,
-      marginBottom: 8
-    }
-  }, "촬영 종류 선택 (여러 개 가능)"), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      gap: 6
-    }
-  }, XRAY_KINDS.map(k => {
-    const on = (draft.kinds || []).includes(k);
-    const st = CAT_STYLE.체크;
-    return /*#__PURE__*/React.createElement("button", {
-      key: k,
-      className: "chip",
-      onClick: () => toggleKind(k),
+    }, on ? "✓ " : "", p);
+  })), procs.map(p => {
+    const multi = PROC_MULTI_STEPS[p.proc];
+    const single = PROC_STEPS[p.proc];
+    const isXray = p.proc === "x-ray 촬영";
+    const isCustom = p.proc === "직접입력";
+    const hasKinds = p.kinds && p.kinds.length > 0;
+    const needDetail = multi || single || isXray || isCustom;
+    if (!needDetail) return null;
+    return /*#__PURE__*/React.createElement("div", {
+      key: p.proc,
       style: {
-        flex: 1,
-        padding: "9px 0",
-        borderRadius: 10,
-        fontSize: 13,
-        fontWeight: 700,
-        background: on ? st.color : C.card,
-        color: on ? "#fff" : C.sub,
-        border: `1.5px solid ${on ? st.color : C.border}`
+        background: C.bg,
+        borderRadius: 12,
+        padding: "12px",
+        marginBottom: 10,
+        animation: "fade .2s ease"
       }
-    }, k);
-  }))), multiSteps && /*#__PURE__*/React.createElement("div", {
-    style: {
-      background: C.bg,
-      borderRadius: 12,
-      padding: "12px",
-      marginBottom: 12,
-      animation: "fade .2s ease"
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 11.5,
-      fontWeight: 700,
-      color: C.gray,
-      marginBottom: 8
-    }
-  }, draft.proc === "수술" ? "수술 종류 선택 (여러 개 가능)" : `${draft.proc} 단계 선택 (여러 개 가능)`), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      flexWrap: "wrap",
-      gap: 6
-    }
-  }, multiSteps.map(s => {
-    const on = (draft.steps || []).includes(s);
-    const st = CAT_STYLE[draft.cat];
-    return /*#__PURE__*/React.createElement("button", {
-      key: s,
-      className: "chip",
-      onClick: () => toggleMulti(s),
+    }, /*#__PURE__*/React.createElement("div", {
       style: {
-        padding: "8px 13px",
-        borderRadius: 999,
-        fontSize: 12.5,
-        fontWeight: 700,
-        background: on ? st.color : C.card,
-        color: on ? "#fff" : C.sub,
-        border: `1.5px solid ${on ? st.color : C.border}`
+        fontSize: 11.5,
+        fontWeight: 800,
+        color: st.color,
+        marginBottom: 8
       }
-    }, s);
-  }))), singleSteps && /*#__PURE__*/React.createElement("div", {
-    style: {
-      background: C.bg,
-      borderRadius: 12,
-      padding: "12px 12px 4px",
-      marginBottom: 12,
-      animation: "fade .2s ease"
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 11.5,
-      fontWeight: 700,
-      color: C.gray,
-      marginBottom: 8
-    }
-  }, isXray ? "촬영 시점 선택" : `${draft.proc} 단계 선택`), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      flexWrap: "wrap",
-      gap: 6,
-      marginBottom: 8
-    }
-  }, singleSteps.map(s => {
-    const on = draft.step === s;
-    const st = CAT_STYLE[draft.cat];
-    return /*#__PURE__*/React.createElement("button", {
-      key: s,
-      className: "chip",
-      onClick: () => pickSingle(s),
+    }, p.proc === "직접입력" ? "직접 입력" : p.proc), isCustom && /*#__PURE__*/React.createElement("input", {
+      value: p.custom || "",
+      onChange: e => updProc(p.proc, {
+        custom: e.target.value
+      }),
+      placeholder: "예: 지르코니아 크라운, 임시 접착 등",
       style: {
-        padding: "8px 13px",
-        borderRadius: 999,
-        fontSize: 12.5,
-        fontWeight: 700,
-        background: on ? st.color : C.card,
-        color: on ? "#fff" : C.sub,
-        border: `1.5px solid ${on ? st.color : C.border}`
+        ...inp,
+        background: "#fff"
       }
-    }, s);
-  }))));
+    }), isXray && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 11,
+        fontWeight: 700,
+        color: C.gray,
+        marginBottom: 6
+      }
+    }, "촬영 종류 (여러 개 가능)"), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        gap: 6,
+        marginBottom: hasKinds ? 10 : 0
+      }
+    }, XRAY_KINDS.map(k => {
+      const on = (p.kinds || []).includes(k);
+      return /*#__PURE__*/React.createElement("button", {
+        key: k,
+        className: "chip",
+        onClick: () => toggleKindOf(p.proc, k),
+        style: {
+          flex: 1,
+          padding: "9px 0",
+          borderRadius: 10,
+          fontSize: 13,
+          fontWeight: 700,
+          background: on ? st.color : C.card,
+          color: on ? "#fff" : C.sub,
+          border: `1.5px solid ${on ? st.color : C.border}`
+        }
+      }, k);
+    })), hasKinds && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 11,
+        fontWeight: 700,
+        color: C.gray,
+        margin: "4px 0 6px"
+      }
+    }, "촬영 시점"), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        flexWrap: "wrap",
+        gap: 6
+      }
+    }, CHECK_DATES.map(s => {
+      const on = p.step === s;
+      return /*#__PURE__*/React.createElement("button", {
+        key: s,
+        className: "chip",
+        onClick: () => setStepOf(p.proc, s),
+        style: {
+          padding: "7px 12px",
+          borderRadius: 999,
+          fontSize: 12.5,
+          fontWeight: 700,
+          background: on ? st.color : C.card,
+          color: on ? "#fff" : C.sub,
+          border: `1.5px solid ${on ? st.color : C.border}`
+        }
+      }, s);
+    })))), multi && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 11,
+        fontWeight: 700,
+        color: C.gray,
+        marginBottom: 6
+      }
+    }, "단계 선택 (여러 개 가능)"), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        flexWrap: "wrap",
+        gap: 6
+      }
+    }, multi.map(s => {
+      const on = (p.steps || []).includes(s);
+      return /*#__PURE__*/React.createElement("button", {
+        key: s,
+        className: "chip",
+        onClick: () => toggleStepOf(p.proc, s),
+        style: {
+          padding: "8px 13px",
+          borderRadius: 999,
+          fontSize: 12.5,
+          fontWeight: 700,
+          background: on ? st.color : C.card,
+          color: on ? "#fff" : C.sub,
+          border: `1.5px solid ${on ? st.color : C.border}`
+        }
+      }, s);
+    }))), single && !isXray && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 11,
+        fontWeight: 700,
+        color: C.gray,
+        marginBottom: 6
+      }
+    }, "단계 선택"), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        flexWrap: "wrap",
+        gap: 6
+      }
+    }, single.map(s => {
+      const on = p.step === s;
+      return /*#__PURE__*/React.createElement("button", {
+        key: s,
+        className: "chip",
+        onClick: () => setStepOf(p.proc, s),
+        style: {
+          padding: "8px 13px",
+          borderRadius: 999,
+          fontSize: 12.5,
+          fontWeight: 700,
+          background: on ? st.color : C.card,
+          color: on ? "#fff" : C.sub,
+          border: `1.5px solid ${on ? st.color : C.border}`
+        }
+      }, s);
+    }))));
+  }));
 }
-/* 추가 가능 여부: 부위(아치 또는 치식)는 필수, x-ray는 종류+날짜, 날짜형 술식은 날짜, 나머지는 단계(있으면) */
+/* 추가 가능 여부: 부위(아치 또는 치식) 필수(체크 제외), 술식 1개 이상 + 각 술식의 필수 상세 충족 */
 const canAddItem = draft => {
-  if (!draft.cat || !draft.proc) return false;
+  if (!draft.cat) return false;
+  const procs = draft.procs || [];
+  if (procs.length === 0) return false;
   const hasArea = draft.arch || draft.teeth && draft.teeth.length > 0;
-  // 체크(검진)·x-ray는 부위가 필수는 아님
   const areaOptional = draft.cat === "체크";
   if (!areaOptional && !hasArea) return false;
-  if (draft.proc === "직접입력") return !!(draft.custom && draft.custom.trim());
-  if (draft.proc === "x-ray 촬영") return !!(draft.kinds && draft.kinds.length) && !!draft.step;
-  if (PROC_MULTI_STEPS[draft.proc]) return !!(draft.steps && draft.steps.length); // 수술/크라운/신경치료: 1개 이상
-  if (PROC_STEPS[draft.proc]) return !!draft.step;
-  return true;
+  // 각 술식의 필수 상세 확인
+  return procs.every(p => {
+    if (p.proc === "직접입력") return !!(p.custom && p.custom.trim());
+    if (p.proc === "x-ray 촬영") return !!(p.kinds && p.kinds.length) && !!p.step;
+    if (PROC_MULTI_STEPS[p.proc]) return !!(p.steps && p.steps.length);
+    if (PROC_STEPS[p.proc]) return !!p.step;
+    return true;
+  });
 };
 const ARCHES = ["전악", "상악", "하악", "턱관절"];
 /* 사분면(십의 자리) 정의 — FDI 표기 */
@@ -2730,12 +2764,12 @@ const QUADRANTS = [{
   label: "좌측 위",
   side: "상악"
 }, {
-  code: 3,
-  label: "좌측 아래",
-  side: "하악"
-}, {
   code: 4,
   label: "우측 아래",
+  side: "하악"
+}, {
+  code: 3,
+  label: "좌측 아래",
   side: "하악"
 }];
 function ToothPad({
@@ -2916,11 +2950,7 @@ function RegisterTab({
     teeth: [],
     arch: null,
     cat: "",
-    proc: "",
-    step: null,
-    steps: [],
-    kinds: [],
-    custom: ""
+    procs: []
   });
   const [nameMatches, setNameMatches] = useState([]); // 동명이인 후보
 
@@ -2996,22 +3026,20 @@ function RegisterTab({
         teeth: [...draft.teeth].sort((a, b) => a - b),
         arch: draft.arch || null,
         cat: draft.cat,
-        proc: draft.proc,
-        step: draft.step || null,
-        steps: draft.steps || [],
-        kinds: draft.kinds || [],
-        custom: draft.custom || ""
+        procs: (draft.procs || []).map(p => ({
+          proc: p.proc,
+          steps: p.steps || [],
+          step: p.step || null,
+          kinds: p.kinds || [],
+          custom: p.custom || ""
+        }))
       }]
     }));
     setDraft({
       teeth: [],
       arch: null,
       cat: "",
-      proc: "",
-      step: null,
-      steps: [],
-      kinds: [],
-      custom: ""
+      procs: []
     });
   };
   const removeItem = i => setForm(f => ({
@@ -3024,11 +3052,13 @@ function RegisterTab({
       teeth: [...draft.teeth].sort((a, b) => a - b),
       arch: draft.arch || null,
       cat: draft.cat,
-      proc: draft.proc,
-      step: draft.step || null,
-      steps: draft.steps || [],
-      kinds: draft.kinds || [],
-      custom: draft.custom || ""
+      procs: (draft.procs || []).map(p => ({
+        proc: p.proc,
+        steps: p.steps || [],
+        step: p.step || null,
+        kinds: p.kinds || [],
+        custom: p.custom || ""
+      }))
     }] : form.items;
     const ok = onAdd({
       ...form,
@@ -3041,11 +3071,7 @@ function RegisterTab({
       teeth: [],
       arch: null,
       cat: "",
-      proc: "",
-      step: null,
-      steps: [],
-      kinds: [],
-      custom: ""
+      procs: []
     });
     setNameMatches([]);
   };
@@ -3301,11 +3327,7 @@ function EditPanel({
     teeth: [],
     arch: null,
     cat: "",
-    proc: "",
-    step: null,
-    steps: [],
-    kinds: [],
-    custom: ""
+    procs: []
   });
   const toggleTime = s => setTimes(v => v.includes(s) ? v.filter(x => x !== s) : [...v, s]);
   const toggleTooth = t => setDraft(d => ({
@@ -3324,21 +3346,19 @@ function EditPanel({
       teeth: [...draft.teeth].sort((a, b) => a - b),
       arch: draft.arch || null,
       cat: draft.cat,
-      proc: draft.proc,
-      step: draft.step || null,
-      steps: draft.steps || [],
-      kinds: draft.kinds || [],
-      custom: draft.custom || ""
+      procs: (draft.procs || []).map(p => ({
+        proc: p.proc,
+        steps: p.steps || [],
+        step: p.step || null,
+        kinds: p.kinds || [],
+        custom: p.custom || ""
+      }))
     }]);
     setDraft({
       teeth: [],
       arch: null,
       cat: "",
-      proc: "",
-      step: null,
-      steps: [],
-      kinds: [],
-      custom: ""
+      procs: []
     });
   };
   const rmItem = i => setItems(v => v.filter((_, idx) => idx !== i));
