@@ -485,7 +485,12 @@ function ClinicApp() {
     try {
       const r = await apiPost(cfg, payload);
       if (!r || !r.ok) {
-        if (r && r.error === "capacity") {\n          showToast("그 시간대는 이미 3명이라 저장되지 않았어요");\n        } else {\n          const detail = r && r.error ? String(r.error) : "서버 응답 없음";\n          showToast(`시트 저장 실패: ${detail}`);\n        }
+        if (r && r.error === "capacity") {
+          showToast("그 시간대는 이미 3명이라 저장되지 않았어요");
+        } else {
+          const detail = r && r.error ? String(r.error) : "서버 응답 없음";
+          showToast(`시트 저장 실패: ${detail}`);
+        }
         // 실패분은 대기에서 제거하고 서버 상태로 되돌림
         clearPending(payload);
         setSyncState("error");
@@ -501,7 +506,8 @@ function ClinicApp() {
       setSyncState(Object.keys(pendingRef.current).length ? "saving" : "ok");
       return r;
     } catch (e) {
-      const detail = e && e.message ? e.message : "네트워크 오류";\n      showToast(`시트 연결 실패: ${detail}`);
+      const detail = e && e.message ? e.message : "네트워크 오류";
+      showToast(`시트 연결 실패: ${detail}`);
       clearPending(payload);
       setSyncState("error");
       return {
