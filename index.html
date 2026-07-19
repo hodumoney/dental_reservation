@@ -903,6 +903,7 @@ function StatusButton({
     onClick: e => e.stopPropagation()
   }, /*#__PURE__*/React.createElement("button", {
     ref: btnRef,
+    className: "statusbtn",
     onClick: () => open ? setOpen(false) : openMenu(),
     style: {
       fontSize: 10.5,
@@ -1201,9 +1202,10 @@ function MonthView({
   }, "오늘"), /*#__PURE__*/React.createElement(NavBtn, {
     onClick: () => setCursor(new Date(y, m + 1, 1))
   }, "›"))), /*#__PURE__*/React.createElement("div", {
+    className: "month-grid",
     style: {
       display: "grid",
-      gridTemplateColumns: "repeat(5,1fr)",
+      gridTemplateColumns: "repeat(5,minmax(0,1fr))",
       gap: 1,
       background: C.border,
       borderRadius: 14,
@@ -1254,7 +1256,7 @@ function MonthView({
       }
     }, /*#__PURE__*/React.createElement("div", {
       onClick: () => onPickDay(ds),
-      className: "daycell",
+      className: "daycell mdaycell",
       role: "button",
       style: {
         width: "100%",
@@ -1269,12 +1271,14 @@ function MonthView({
         gap: 4
       }
     }, /*#__PURE__*/React.createElement("div", {
+      className: "mday-top",
       style: {
         display: "flex",
         alignItems: "center",
         gap: 5
       }
     }, /*#__PURE__*/React.createElement("span", {
+      className: "mday-num",
       style: {
         fontSize: 13,
         fontWeight: 700,
@@ -1285,20 +1289,24 @@ function MonthView({
         height: 22,
         display: "inline-flex",
         alignItems: "center",
-        justifyContent: "center"
+        justifyContent: "center",
+        flexShrink: 0
       }
     }, d), list.length > 0 && /*#__PURE__*/React.createElement("span", {
+      className: "mday-cnt",
       style: {
         fontSize: 11,
         color: C.blueDark,
         fontWeight: 700,
         background: C.blueSoft,
         borderRadius: 6,
-        padding: "1px 6px"
+        padding: "1px 6px",
+        flexShrink: 0
       }
     }, list.length, "건"), /*#__PURE__*/React.createElement("span", {
       style: {
-        marginLeft: "auto"
+        marginLeft: "auto",
+        flexShrink: 0
       }
     }, /*#__PURE__*/React.createElement(StatusButton, {
       ds: ds,
@@ -1626,7 +1634,7 @@ function WeekView({
 }
 
 /* ══════════ 탭1: 일별 예약 (카드가 슬롯 높이를 점유하는 타임라인) ══════════ */
-const ROW_H = 84; // 슬롯 1칸(30분) 높이 px
+const ROW_H = 96; // 슬롯 1칸(30분) 높이 px
 const LUNCH_H = 56; // 점심 밴드 높이 px
 const LUNCH_START = "11:00"; // 이 슬롯 다음에 점심 밴드
 const slotY = idx => {
@@ -1666,6 +1674,7 @@ function DayTab({
     const colEnds = [];
     sortAppts(dayList).forEach(a => {
       const starts = normTimes(a).map(t => idx[t]).filter(v => v != null).sort((x, y) => x - y);
+      if (!starts.length) return;
       const startIdx = starts[0];
       const endIdx = starts[starts.length - 1] + 1;
       let col = colEnds.findIndex(end => end <= startIdx);
@@ -1680,10 +1689,14 @@ function DayTab({
         col
       });
     });
-    const cols = Math.max(1, colEnds.length);
+    // 각 카드가 실제로 겹치는 카드 수(=그 구간의 최대 동시 열 수)를 계산 → 혼자면 전체폭
+    placed.forEach(p => {
+      const overlaps = placed.filter(q => q.startIdx < p.endIdx && p.startIdx < q.endIdx);
+      const groupCols = Math.max(...overlaps.map(q => q.col)) + 1; // 이 그룹의 열 개수
+      p.groupCols = groupCols;
+    });
     return {
-      placed,
-      cols
+      placed
     };
   }, [dayList]);
   const shift = delta => setDate(shiftDate(date, delta));
@@ -1836,7 +1849,16 @@ function DayTab({
       fontWeight: 700,
       color: C.gray
     }
-  }, slot))), /*#__PURE__*/React.createElement("div", {
+  }, slot)), /*#__PURE__*/React.createElement("div", {
+    style: {
+      position: "absolute",
+      top: slotY(SLOTS.all.indexOf(LUNCH_START)) + ROW_H - 8,
+      right: 0,
+      fontSize: 12.5,
+      fontWeight: 700,
+      color: C.gray
+    }
+  }, "11:30")), /*#__PURE__*/React.createElement("div", {
     style: {
       flex: 1,
       position: "relative",
@@ -1899,15 +1921,17 @@ function DayTab({
     a,
     startIdx,
     endIdx,
-    col
+    col,
+    groupCols
   }) => {
     var _a$items$;
     const top = slotY(startIdx);
     const height = slotY(endIdx - 1) + ROW_H - slotY(startIdx) - 6;
-    const widthPct = 100 / layout.cols;
+    const widthPct = 100 / groupCols; // 혼자면 100%
     const st = CAT_STYLE[(_a$items$ = a.items[0]) === null || _a$items$ === void 0 ? void 0 : _a$items$.cat] || CAT_STYLE.충치치료; // 첫 술식 색
     const nt = normTimes(a); // 정규화된 시간 배열
     const startT = nt[0] || "";
+    const attState = a.attended ? "내원" : a.attendMarked ? "미내원" : "미확인";
     return /*#__PURE__*/React.createElement("div", {
       key: a.id,
       draggable: true,
@@ -1943,29 +1967,24 @@ function DayTab({
         background: st.soft,
         border: `1px solid ${st.color}33`,
         borderRadius: 12,
-        padding: "9px 11px",
+        padding: "7px 9px",
         overflow: "hidden",
         cursor: "grab",
         display: "flex",
         flexDirection: "column",
+        gap: 2,
         opacity: a.attended ? 1 : 0.96
       }
     }, /*#__PURE__*/React.createElement("div", {
       style: {
-        display: "flex",
-        justifyContent: "space-between",
-        alignItems: "flex-start",
-        gap: 6
-      }
-    }, /*#__PURE__*/React.createElement("div", {
-      style: {
-        fontSize: 13.5,
+        fontSize: 12.5,
         fontWeight: 800,
         color: C.text,
         display: "flex",
         alignItems: "center",
-        gap: 5,
-        minWidth: 0
+        gap: 4,
+        minWidth: 0,
+        lineHeight: 1.2
       }
     }, /*#__PURE__*/React.createElement("span", {
       style: {
@@ -1973,67 +1992,64 @@ function DayTab({
         overflow: "hidden",
         textOverflow: "ellipsis"
       }
-    }, a.name, a.chartNo ? /*#__PURE__*/React.createElement("span", {
-      style: {
-        fontSize: 11,
-        fontWeight: 500,
-        color: C.gray
-      }
-    }, " (", a.chartNo, ")") : null), a.surgery && /*#__PURE__*/React.createElement("span", {
+    }, a.name), a.surgery && /*#__PURE__*/React.createElement("span", {
       style: {
         ...pill("#fff", C.red),
         fontWeight: 700,
-        fontSize: 10,
-        padding: "1px 5px",
+        fontSize: 9.5,
+        padding: "1px 4px",
         flexShrink: 0
       }
-    }, "수술")), /*#__PURE__*/React.createElement("button", {
+    }, "수술")), a.chartNo && /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 10.5,
+        fontWeight: 500,
+        color: C.gray,
+        lineHeight: 1.2,
+        whiteSpace: "nowrap",
+        overflow: "hidden",
+        textOverflow: "ellipsis"
+      }
+    }, a.chartNo), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        flexDirection: "column",
+        gap: 2,
+        marginTop: 1,
+        overflow: "hidden",
+        flex: 1
+      }
+    }, a.items.map((it, i) => /*#__PURE__*/React.createElement("span", {
+      key: i,
+      style: {
+        fontSize: 10.5,
+        fontWeight: 700,
+        color: st.color,
+        lineHeight: 1.25,
+        whiteSpace: "nowrap",
+        overflow: "hidden",
+        textOverflow: "ellipsis"
+      }
+    }, itemLabel(it)))), /*#__PURE__*/React.createElement("button", {
       onClick: e => {
         e.stopPropagation();
         onAttend(a.id, !a.attended);
       },
       className: "chip",
       style: {
-        flexShrink: 0,
-        fontSize: 12,
+        marginTop: 2,
+        width: "100%",
+        fontSize: 11,
         fontWeight: 800,
-        borderRadius: 9,
-        padding: "6px 12px",
+        borderRadius: 8,
+        padding: "5px 0",
         cursor: "pointer",
+        flexShrink: 0,
         background: a.attended ? C.green : a.attendMarked ? C.orange : "#fff",
         color: a.attended || a.attendMarked ? "#fff" : C.gray,
         border: `1.5px solid ${a.attended ? C.green : a.attendMarked ? C.orange : C.border}`
       }
-    }, a.attended ? "내원" : a.attendMarked ? "미내원" : "미확인")), /*#__PURE__*/React.createElement("div", {
-      style: {
-        fontSize: 11,
-        color: st.color,
-        fontWeight: 700,
-        marginTop: 2
-      }
-    }, nt.length > 1 ? `${nt[0]}~${nt[nt.length - 1]} (${nt.length * 30}분)` : `${startT} (30분)`), /*#__PURE__*/React.createElement("div", {
-      style: {
-        display: "flex",
-        flexWrap: "wrap",
-        gap: 4,
-        marginTop: 4,
-        overflow: "hidden",
-        flex: 1,
-        alignContent: "flex-start"
-      }
-    }, a.items.map((it, i) => /*#__PURE__*/React.createElement("span", {
-      key: i,
-      style: {
-        ...pill("#ffffffcc", st.color),
-        fontWeight: 700,
-        fontSize: 10.5,
-        padding: "2px 7px",
-        maxWidth: "100%",
-        overflow: "hidden",
-        textOverflow: "ellipsis",
-        whiteSpace: "nowrap"
-      }
-    }, itemLabel(it)))));
+    }, attState));
   })))), /*#__PURE__*/React.createElement("p", {
     style: {
       fontSize: 12,
@@ -2479,8 +2495,8 @@ function ProcPicker({
   }));
   return /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
     style: {
-      display: "flex",
-      flexWrap: "wrap",
+      display: "grid",
+      gridTemplateColumns: "repeat(3,1fr)",
       gap: compact ? 6 : 8,
       marginBottom: 12
     }
@@ -2492,9 +2508,8 @@ function ProcPicker({
       className: "chip",
       onClick: () => pickCat(cat),
       style: {
-        flex: "1 1 0",
-        minWidth: compact ? 54 : 64,
-        padding: compact ? "9px 0" : "12px 0",
+        minWidth: 0,
+        padding: compact ? "10px 0" : "12px 0",
         borderRadius: compact ? 10 : 13,
         fontSize: compact ? 12.5 : 14,
         fontWeight: 700,
@@ -2658,6 +2673,24 @@ const canAddItem = draft => {
   return true;
 };
 const ARCHES = ["전악", "상악", "하악", "턱관절"];
+/* 사분면(십의 자리) 정의 — FDI 표기 */
+const QUADRANTS = [{
+  code: 1,
+  label: "우측 위",
+  side: "상악"
+}, {
+  code: 2,
+  label: "좌측 위",
+  side: "상악"
+}, {
+  code: 3,
+  label: "좌측 아래",
+  side: "하악"
+}, {
+  code: 4,
+  label: "우측 아래",
+  side: "하악"
+}];
 function ToothPad({
   teeth,
   onToggle,
@@ -2665,6 +2698,14 @@ function ToothPad({
   onArch,
   compact
 }) {
+  const [quad, setQuad] = useState(null); // 선택한 사분면 code (1~4)
+
+  const addTooth = n => {
+    // n: 1~8
+    if (!quad) return;
+    const num = quad * 10 + n;
+    if (!teeth.includes(num)) onToggle(num);
+  };
   return /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
@@ -2679,7 +2720,7 @@ function ToothPad({
       onClick: () => onArch(on ? null : key),
       style: {
         flex: 1,
-        padding: "10px 0",
+        padding: "11px 0",
         borderRadius: 11,
         fontSize: 13,
         fontWeight: 700,
@@ -2704,55 +2745,110 @@ function ToothPad({
       borderRadius: 16,
       padding: 14
     }
-  }, /*#__PURE__*/React.createElement(ToothRow, {
-    teeth: TEETH_UPPER,
-    sel: teeth,
-    onToggle: onToggle
-  }), /*#__PURE__*/React.createElement("div", {
+  }, teeth.length > 0 && /*#__PURE__*/React.createElement("div", {
     style: {
-      height: 1,
-      background: C.border,
-      margin: "10px 0"
+      display: "flex",
+      flexWrap: "wrap",
+      gap: 6,
+      marginBottom: 12
     }
-  }), /*#__PURE__*/React.createElement(ToothRow, {
-    teeth: TEETH_LOWER,
-    sel: teeth,
-    onToggle: onToggle
-  })));
-}
-function ToothRow({
-  teeth,
-  sel,
-  onToggle
-}) {
-  return /*#__PURE__*/React.createElement("div", {
-    className: "toothrow",
+  }, [...teeth].sort((a, b) => a - b).map(t => /*#__PURE__*/React.createElement("button", {
+    key: t,
+    className: "chip",
+    onClick: () => onToggle(t),
+    style: {
+      display: "inline-flex",
+      alignItems: "center",
+      gap: 5,
+      padding: "6px 10px",
+      borderRadius: 9,
+      fontSize: 13,
+      fontWeight: 800,
+      background: C.blue,
+      color: "#fff",
+      border: "none"
+    }
+  }, "#", t, " ", /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 12,
+      opacity: .8
+    }
+  }, "✕")))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11.5,
+      fontWeight: 700,
+      color: C.gray,
+      marginBottom: 7
+    }
+  }, "① 부위 선택"), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "grid",
-      gridTemplateColumns: "repeat(16,minmax(0,1fr))",
-      gap: 3,
-      width: "100%"
+      gridTemplateColumns: "1fr 1fr",
+      gap: 6,
+      marginBottom: 14
     }
-  }, teeth.map(t => {
-    const on = sel.includes(t);
+  }, QUADRANTS.map(q => {
+    const on = quad === q.code;
     return /*#__PURE__*/React.createElement("button", {
-      key: t,
-      className: "tooth toothbtn",
-      onClick: () => onToggle(t),
+      key: q.code,
+      className: "chip",
+      onClick: () => setQuad(on ? null : q.code),
+      style: {
+        padding: "12px 0",
+        borderRadius: 12,
+        fontSize: 13.5,
+        fontWeight: 700,
+        background: on ? C.blue : C.card,
+        color: on ? "#fff" : C.text,
+        border: `1.5px solid ${on ? C.blue : C.border}`
+      }
+    }, q.label, " ", /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: 11,
+        opacity: .7
+      }
+    }, "(", q.code, "0번대)"));
+  })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11.5,
+      fontWeight: 700,
+      color: C.gray,
+      marginBottom: 7
+    }
+  }, "② 치아 번호 ", quad ? `(${quad}0번대)` : ""), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "grid",
+      gridTemplateColumns: "repeat(8,1fr)",
+      gap: 6,
+      opacity: quad ? 1 : 0.4,
+      pointerEvents: quad ? "auto" : "none"
+    }
+  }, [1, 2, 3, 4, 5, 6, 7, 8].map(n => {
+    const num = quad ? quad * 10 + n : n;
+    const on = quad && teeth.includes(num);
+    return /*#__PURE__*/React.createElement("button", {
+      key: n,
+      className: "chip",
+      onClick: () => addTooth(n),
       style: {
         aspectRatio: "1",
         minWidth: 0,
-        padding: 0,
-        borderRadius: 6,
-        fontSize: 11,
-        fontWeight: 700,
-        lineHeight: 1,
+        borderRadius: 10,
+        fontSize: 15,
+        fontWeight: 800,
         background: on ? C.blue : C.card,
-        color: on ? "#fff" : C.sub,
-        border: `1px solid ${on ? C.blue : C.border}`
+        color: on ? "#fff" : C.text,
+        border: `1.5px solid ${on ? C.blue : C.border}`
       }
-    }, t);
-  }));
+    }, n);
+  })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: C.gray,
+      marginTop: 9,
+      lineHeight: 1.5
+    }
+  }, "1 앞니 · 2 측절치 · 3 송곳니 · 4·5 작은어금니 · 6·7 큰어금니 · 8 사랑니")));
 }
 
 /* ══════════ 탭2: 환자 등록 ══════════ */
@@ -4087,13 +4183,15 @@ function FieldLabel({
       display: "flex",
       alignItems: "baseline",
       gap: 6,
-      marginBottom: 7
+      marginBottom: 7,
+      flexWrap: "wrap"
     }
   }, /*#__PURE__*/React.createElement("label", {
     style: {
       fontSize: 13,
       fontWeight: 700,
-      color: C.sub
+      color: C.sub,
+      whiteSpace: "nowrap"
     }
   }, children), hint && /*#__PURE__*/React.createElement("span", {
     style: {
@@ -4231,13 +4329,18 @@ function GlobalStyle() {
       .tabbar button{font-size:11px!important;padding:10px 1px!important;line-height:1.2!important;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
       .stat-grid{grid-template-columns:1fr!important}
       .card-pad{padding:16px!important}
-      .toothbtn{font-size:10px!important}
-      .day-axis{width:42px!important}
+      .day-axis{width:40px!important}
       .toast{left:12px!important;right:12px!important;transform:none!important;text-align:center;white-space:normal}
+      /* 월간: 칸 넘침 방지 + 상태버튼 축소 */
+      .mdaycell{padding:5px 4px 5px!important;min-height:92px!important}
+      .mday-num{font-size:12px!important;width:19px!important;height:19px!important}
+      .mday-cnt{font-size:9.5px!important;padding:1px 4px!important}
+      .mday-top{gap:3px!important}
+      .statusbtn{font-size:9px!important;padding:1px 4px!important}
       /* 주간 캘린더: 가로 스크롤 없이 화면에 맞춤 */
       .week-scroll{overflow-x:hidden!important}
       .week-inner{min-width:0!important;width:100%!important}
-      .week-grid{grid-template-columns:34px repeat(5,1fr)!important}
+      .week-grid{grid-template-columns:40px repeat(5,minmax(0,1fr))!important}
       .week-inner .dragchip{font-size:9.5px!important;padding:3px 4px!important}
       /* 이 날 상태 버튼 줄: 넘치면 줄바꿈 대신 축소 */
       .daystatus button{padding:7px 9px!important;font-size:12px!important}
@@ -4245,6 +4348,7 @@ function GlobalStyle() {
     @media (max-width:400px){
       .tabbar button{font-size:10px!important}
       .week-inner{font-size:11px}
+      .statusbtn{font-size:8.5px!important}
     }
     @keyframes toastUpM{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
     @media (prefers-reduced-motion:reduce){.chip,.tooth,.savebtn,.toast{transition:none!important;animation:none!important}}
