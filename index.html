@@ -79,12 +79,12 @@ const TEETH_LOWER = [48, 47, 46, 45, 44, 43, 42, 41, 31, 32, 33, 34, 35, 36, 37,
    - 레진/인레이/검진: 단계 단일 선택 → item.step */
 const SURGERY_TYPES = ["발치", "뼈이식", "임플란트 1차", "임플란트 2차", "잇몸 수술", "치근단 절제술", "치아재식술"];
 const PROC_CATS = {
-  수술: ["수술"],
-  // 카테고리 선택 시 아래 SURGERY_TYPES 다중 체크
-  충치치료: ["레진", "인레이", "신경치료", "크라운"],
-  잇몸치료: ["스케일링", "큐렛"],
-  드레싱: ["드레싱", "s-o"],
-  체크: ["수복물 검진", "턱관절 검진", "정기 검진", "x-ray 촬영"]
+  수술: ["수술", "직접입력"],
+  // '수술' 선택 시 세부술식 다중, '직접입력' 선택 시 자유 입력
+  충치치료: ["레진", "인레이", "신경치료", "크라운", "직접입력"],
+  잇몸치료: ["스케일링", "큐렛", "직접입력"],
+  드레싱: ["드레싱", "s-o", "직접입력"],
+  체크: ["수복물 검진", "턱관절 검진", "정기 검진", "x-ray 촬영", "직접입력"]
 };
 const CHECK_DATES = ["1일", "1주일", "2주일", "1달", "2달", "3달", "6달"];
 /* 단일 단계 선택 술식 */
@@ -199,6 +199,8 @@ const fmtPhone = v => {
   return `${n.slice(0, 3)}-${n.slice(3, 7)}-${n.slice(7)}`;
 };
 const procFull = it => {
+  // 직접입력
+  if (it.proc === "직접입력") return it.custom ? it.custom : "직접입력";
   // x-ray 촬영: "x-ray 촬영 panex·CT 1달"
   if (it.proc === "x-ray 촬영") {
     const kinds = it.kinds && it.kinds.length ? it.kinds.join("·") : null;
@@ -552,6 +554,25 @@ function ClinicApp() {
       status: dayStatus[ds] === st ? "" : st
     });
   };
+  // 환자 정보(번호·연락처) 일괄 수정: 해당 환자의 모든 예약에 반영
+  const editPatientInfo = (p, patch) => {
+    const key = p.chartNo || p.name;
+    const updates = [];
+    setAppts(prev => prev.map(a => {
+      const aKey = a.chartNo || a.name;
+      if (aKey !== key) return a;
+      const merged = {
+        ...a,
+        ...patch
+      };
+      updates.push(merged);
+      return merged;
+    }));
+    updates.forEach(u => push({
+      action: "update",
+      appt: u
+    }));
+  };
   const moveAppt = (id, {
     date,
     startTime
@@ -778,6 +799,10 @@ function ClinicApp() {
         date: "",
         times: []
       });
+    },
+    onEditPatient: (p, patch) => {
+      editPatientInfo(p, patch);
+      showToast(`${p.name}님 정보를 저장했어요`);
     }
   }), tab === 4 && /*#__PURE__*/React.createElement(SmsTab, {
     appts: appts,
@@ -1303,22 +1328,13 @@ function MonthView({
         padding: "1px 6px",
         flexShrink: 0
       }
-    }, list.length, "건"), /*#__PURE__*/React.createElement("span", {
-      style: {
-        marginLeft: "auto",
-        flexShrink: 0
-      }
-    }, /*#__PURE__*/React.createElement(StatusButton, {
-      ds: ds,
-      status: dayStatus[ds],
-      onSetStatus: onSetStatus,
-      alignRight: i % 5 >= 3
-    }))), /*#__PURE__*/React.createElement("div", {
+    }, list.length, "건")), /*#__PURE__*/React.createElement("div", {
       style: {
         display: "flex",
         flexDirection: "column",
         gap: 2,
-        overflow: "hidden"
+        overflow: "hidden",
+        flex: 1
       }
     }, list.slice(0, 3).map(a => {
       const k = KIND_STYLE[apptKind(a)];
@@ -1329,12 +1345,12 @@ function MonthView({
           e.stopPropagation();
           dragId.current = a.id;
         },
-        className: "dragchip",
+        className: "dragchip mday-chip",
         style: {
           display: "flex",
           alignItems: "center",
-          gap: 4,
-          fontSize: 11,
+          gap: 3,
+          fontSize: 10.5,
           whiteSpace: "nowrap",
           overflow: "hidden",
           textOverflow: "ellipsis",
@@ -1343,12 +1359,12 @@ function MonthView({
           color: k.color,
           fontWeight: 700,
           borderRadius: 6,
-          padding: "2px 6px"
+          padding: "2px 5px"
         }
       }, /*#__PURE__*/React.createElement("span", {
         style: {
-          width: 6,
-          height: 6,
+          width: 5,
+          height: 5,
           borderRadius: 99,
           background: k.color,
           flexShrink: 0
@@ -1358,14 +1374,25 @@ function MonthView({
           overflow: "hidden",
           textOverflow: "ellipsis"
         }
-      }, firstTime(a), " ", a.name));
+      }, a.name));
     }), list.length > 3 && /*#__PURE__*/React.createElement("div", {
       style: {
-        fontSize: 10.5,
+        fontSize: 10,
         color: C.gray,
         fontWeight: 600
       }
-    }, "+", list.length - 3, "명 더"))));
+    }, "+", list.length - 3, "명 더")), /*#__PURE__*/React.createElement("div", {
+      style: {
+        marginTop: "auto",
+        paddingTop: 4
+      },
+      onClick: e => e.stopPropagation()
+    }, /*#__PURE__*/React.createElement(StatusButton, {
+      ds: ds,
+      status: dayStatus[ds],
+      onSetStatus: onSetStatus,
+      alignRight: i % 5 >= 3
+    }))));
   })), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
@@ -1542,7 +1569,7 @@ function WeekView({
       justifyContent: "flex-end",
       background: C.bg
     }
-  }, slot), days.map(ds => {
+  }, slot.slice(0, 2)), days.map(ds => {
     const key = `${ds}|${slot}`;
     const list = byCell[key] || [];
     const isStart = list.filter(a => firstTime(a) === slot);
@@ -1583,7 +1610,6 @@ function WeekView({
     }, isStart.map(a => {
       const k = KIND_STYLE[apptKind(a)];
       const proc = a.items.map(itemLabel).join(", ");
-      const ft = firstTime(a);
       return /*#__PURE__*/React.createElement("div", {
         key: a.id,
         draggable: true,
@@ -1595,7 +1621,7 @@ function WeekView({
           onPickDay(ds);
         },
         className: "dragchip",
-        title: `${ft} ${a.name} · ${proc}`,
+        title: `${a.name} · ${proc}`,
         style: {
           fontSize: 10.5,
           color: k.color,
@@ -1614,7 +1640,7 @@ function WeekView({
           overflow: "hidden",
           textOverflow: "ellipsis"
         }
-      }, ft, " ", a.name), /*#__PURE__*/React.createElement("div", {
+      }, a.name), /*#__PURE__*/React.createElement("div", {
         style: {
           fontWeight: 600,
           color: C.sub,
@@ -2441,7 +2467,7 @@ function ProcPicker({
   setDraft,
   compact
 }) {
-  const isSurgery = draft.cat === "수술";
+  const isCustom = draft.proc === "직접입력";
   const isXray = draft.proc === "x-ray 촬영";
   const hasKinds = draft.kinds && draft.kinds.length > 0;
   const multiSteps = draft.proc ? PROC_MULTI_STEPS[draft.proc] : null; // 다중 단계
@@ -2449,22 +2475,14 @@ function ProcPicker({
 
   const pickCat = cat => setDraft(d => {
     const on = d.cat === cat;
-    // 수술 카테고리는 선택 즉시 proc="수술" 로 고정 (세부술식은 다중 단계로)
-    if (!on && cat === "수술") return {
-      ...d,
-      cat,
-      proc: "수술",
-      step: null,
-      steps: [],
-      kinds: []
-    };
     return {
       ...d,
       cat: on ? "" : cat,
       proc: "",
       step: null,
       steps: [],
-      kinds: []
+      kinds: [],
+      custom: ""
     };
   });
   const pickProc = p => setDraft(d => ({
@@ -2472,7 +2490,8 @@ function ProcPicker({
     proc: d.proc === p ? "" : p,
     step: null,
     steps: [],
-    kinds: []
+    kinds: [],
+    custom: ""
   }));
   const toggleKind = k => setDraft(d => {
     const cur = d.kinds || [];
@@ -2518,7 +2537,7 @@ function ProcPicker({
         border: `1.5px solid ${on ? st.color : "transparent"}`
       }
     }, cat);
-  })), draft.cat && !isSurgery && /*#__PURE__*/React.createElement("div", {
+  })), draft.cat && /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       flexWrap: "wrap",
@@ -2529,6 +2548,7 @@ function ProcPicker({
   }, PROC_CATS[draft.cat].map(p => {
     const on = draft.proc === p;
     const st = CAT_STYLE[draft.cat];
+    const label = p === "수술" ? "수술 종류" : p;
     return /*#__PURE__*/React.createElement("button", {
       key: p,
       className: "chip",
@@ -2542,7 +2562,33 @@ function ProcPicker({
         color: on ? st.color : C.sub,
         border: `1.5px solid ${on ? st.color : "transparent"}`
       }
-    }, p);
+    }, label);
+  })), isCustom && /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: C.bg,
+      borderRadius: 12,
+      padding: "12px",
+      marginBottom: 12,
+      animation: "fade .2s ease"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11.5,
+      fontWeight: 700,
+      color: C.gray,
+      marginBottom: 8
+    }
+  }, "직접 입력"), /*#__PURE__*/React.createElement("input", {
+    value: draft.custom || "",
+    onChange: e => setDraft(d => ({
+      ...d,
+      custom: e.target.value
+    })),
+    placeholder: "예: 지르코니아 크라운, 임시 접착 등",
+    style: {
+      ...inp,
+      background: "#fff"
+    }
   })), isXray && /*#__PURE__*/React.createElement("div", {
     style: {
       background: C.bg,
@@ -2596,7 +2642,7 @@ function ProcPicker({
       color: C.gray,
       marginBottom: 8
     }
-  }, isSurgery ? "수술 종류 선택 (여러 개 가능)" : `${draft.proc} 단계 선택 (여러 개 가능)`), /*#__PURE__*/React.createElement("div", {
+  }, draft.proc === "수술" ? "수술 종류 선택 (여러 개 가능)" : `${draft.proc} 단계 선택 (여러 개 가능)`), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       flexWrap: "wrap",
@@ -2667,6 +2713,7 @@ const canAddItem = draft => {
   // 체크(검진)·x-ray는 부위가 필수는 아님
   const areaOptional = draft.cat === "체크";
   if (!areaOptional && !hasArea) return false;
+  if (draft.proc === "직접입력") return !!(draft.custom && draft.custom.trim());
   if (draft.proc === "x-ray 촬영") return !!(draft.kinds && draft.kinds.length) && !!draft.step;
   if (PROC_MULTI_STEPS[draft.proc]) return !!(draft.steps && draft.steps.length); // 수술/크라운/신경치료: 1개 이상
   if (PROC_STEPS[draft.proc]) return !!draft.step;
@@ -2872,7 +2919,8 @@ function RegisterTab({
     proc: "",
     step: null,
     steps: [],
-    kinds: []
+    kinds: [],
+    custom: ""
   });
   const [nameMatches, setNameMatches] = useState([]); // 동명이인 후보
 
@@ -2951,7 +2999,8 @@ function RegisterTab({
         proc: draft.proc,
         step: draft.step || null,
         steps: draft.steps || [],
-        kinds: draft.kinds || []
+        kinds: draft.kinds || [],
+        custom: draft.custom || ""
       }]
     }));
     setDraft({
@@ -2961,7 +3010,8 @@ function RegisterTab({
       proc: "",
       step: null,
       steps: [],
-      kinds: []
+      kinds: [],
+      custom: ""
     });
   };
   const removeItem = i => setForm(f => ({
@@ -2977,7 +3027,8 @@ function RegisterTab({
       proc: draft.proc,
       step: draft.step || null,
       steps: draft.steps || [],
-      kinds: draft.kinds || []
+      kinds: draft.kinds || [],
+      custom: draft.custom || ""
     }] : form.items;
     const ok = onAdd({
       ...form,
@@ -2993,7 +3044,8 @@ function RegisterTab({
       proc: "",
       step: null,
       steps: [],
-      kinds: []
+      kinds: [],
+      custom: ""
     });
     setNameMatches([]);
   };
@@ -3252,7 +3304,8 @@ function EditPanel({
     proc: "",
     step: null,
     steps: [],
-    kinds: []
+    kinds: [],
+    custom: ""
   });
   const toggleTime = s => setTimes(v => v.includes(s) ? v.filter(x => x !== s) : [...v, s]);
   const toggleTooth = t => setDraft(d => ({
@@ -3274,7 +3327,8 @@ function EditPanel({
       proc: draft.proc,
       step: draft.step || null,
       steps: draft.steps || [],
-      kinds: draft.kinds || []
+      kinds: draft.kinds || [],
+      custom: draft.custom || ""
     }]);
     setDraft({
       teeth: [],
@@ -3283,7 +3337,8 @@ function EditPanel({
       proc: "",
       step: null,
       steps: [],
-      kinds: []
+      kinds: [],
+      custom: ""
     });
   };
   const rmItem = i => setItems(v => v.filter((_, idx) => idx !== i));
@@ -3481,9 +3536,90 @@ const buildToothHistory = past => {
   });
   return hist;
 };
+
+/* 환자 정보(번호·연락처) 인라인 수정 */
+function PatientInfoEditor({
+  p,
+  onSave
+}) {
+  const [chartNo, setChartNo] = useState(p.chartNo || "");
+  const [phone, setPhone] = useState(p.phone || "");
+  const dirty = chartNo !== (p.chartNo || "") || phone !== (p.phone || "");
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: C.bg,
+      borderRadius: 14,
+      padding: 14,
+      marginBottom: 16
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12.5,
+      fontWeight: 800,
+      color: C.sub,
+      marginBottom: 10
+    }
+  }, "환자 정보 수정"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "grid",
+      gridTemplateColumns: "1fr 1fr",
+      gap: 10
+    },
+    className: "reg-grid"
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11.5,
+      fontWeight: 700,
+      color: C.gray,
+      marginBottom: 5
+    }
+  }, "환자 번호"), /*#__PURE__*/React.createElement("input", {
+    style: {
+      ...inp,
+      background: "#fff"
+    },
+    value: chartNo,
+    onChange: e => setChartNo(e.target.value),
+    placeholder: "24-0000"
+  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11.5,
+      fontWeight: 700,
+      color: C.gray,
+      marginBottom: 5
+    }
+  }, "연락처"), /*#__PURE__*/React.createElement("input", {
+    style: {
+      ...inp,
+      background: "#fff"
+    },
+    value: phone,
+    inputMode: "numeric",
+    onChange: e => setPhone(fmtPhone(e.target.value)),
+    placeholder: "010-0000-0000"
+  }))), /*#__PURE__*/React.createElement("button", {
+    className: "chip",
+    onClick: () => onSave(p, {
+      chartNo,
+      phone
+    }),
+    disabled: !dirty,
+    style: {
+      width: "100%",
+      marginTop: 10,
+      padding: "10px 0",
+      borderRadius: 11,
+      fontSize: 13.5,
+      fontWeight: 700,
+      background: dirty ? C.blue : C.border,
+      color: dirty ? "#fff" : C.gray
+    }
+  }, "정보 저장"));
+}
 function PatientListTab({
   appts,
-  onBook
+  onBook,
+  onEditPatient
 }) {
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState("전체");
@@ -3680,7 +3816,10 @@ function PatientListTab({
         paddingTop: 14,
         borderTop: `1px solid ${C.line}`
       }
-    }, /*#__PURE__*/React.createElement(FieldLabel, null, "이전 진료 내역 (", p.past.length, "회)"), p.past.length === 0 ? /*#__PURE__*/React.createElement("div", {
+    }, /*#__PURE__*/React.createElement(PatientInfoEditor, {
+      p: p,
+      onSave: onEditPatient
+    }), /*#__PURE__*/React.createElement(FieldLabel, null, "이전 진료 내역 (", p.past.length, "회)"), p.past.length === 0 ? /*#__PURE__*/React.createElement("div", {
       style: {
         fontSize: 12.5,
         color: C.gray,
