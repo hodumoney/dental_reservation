@@ -2811,12 +2811,13 @@ function ToothPad({
   onArch,
   compact
 }) {
-  const [tens, setTens] = useState(1);
-  const [ones, setOnes] = useState(1);
-  const selectedTooth = tens * 10 + ones;
-  const toothAlreadySelected = teeth.includes(selectedTooth);
-  const addTooth = () => {
-    if (!toothAlreadySelected) onToggle(selectedTooth);
+  const [quad, setQuad] = useState(null); // 선택한 사분면 code (1~4)
+
+  const addTooth = n => {
+    // n: 1~8
+    if (!quad) return;
+    const num = quad * 10 + n;
+    if (!teeth.includes(num)) onToggle(num);
   };
   return /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
     style: {
@@ -2892,89 +2893,75 @@ function ToothPad({
       color: C.gray,
       marginBottom: 7
     }
-  }, "치식 선택"), /*#__PURE__*/React.createElement("div", {
+  }, "① 부위 선택"), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "grid",
       gridTemplateColumns: "1fr 1fr",
-      gap: 8,
-      marginBottom: 10
-    }
-  }, /*#__PURE__*/React.createElement("label", {
-    style: {
-      display: "flex",
-      flexDirection: "column",
       gap: 6,
+      marginBottom: 14
+    }
+  }, QUADRANTS.map(q => {
+    const on = quad === q.code;
+    return /*#__PURE__*/React.createElement("button", {
+      key: q.code,
+      className: "chip",
+      onClick: () => setQuad(on ? null : q.code),
+      style: {
+        padding: "12px 0",
+        borderRadius: 12,
+        fontSize: 13.5,
+        fontWeight: 700,
+        background: on ? C.blue : C.card,
+        color: on ? "#fff" : C.text,
+        border: `1.5px solid ${on ? C.blue : C.border}`
+      }
+    }, q.label, " ", /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: 11,
+        opacity: .7
+      }
+    }, "(", q.code, "0번대)"));
+  })), /*#__PURE__*/React.createElement("div", {
+    style: {
       fontSize: 11.5,
       fontWeight: 700,
-      color: C.gray
+      color: C.gray,
+      marginBottom: 7
     }
-  }, "10의 자리", /*#__PURE__*/React.createElement("select", {
-    value: tens,
-    onChange: e => setTens(Number(e.target.value)),
-    "aria-label": "치식 10의 자리",
+  }, "② 치아 번호 ", quad ? `(${quad}0번대)` : ""), /*#__PURE__*/React.createElement("div", {
     style: {
-      width: "100%",
-      padding: "12px 10px",
-      borderRadius: 12,
-      fontFamily: FONT,
-      fontSize: 15,
-      fontWeight: 800,
-      color: C.text,
-      background: C.card,
-      border: `1.5px solid ${C.border}`
-    }
-  }, QUADRANTS.map(q => /*#__PURE__*/React.createElement("option", {
-    key: q.code,
-    value: q.code
-  }, q.code, " · ", q.label)))), /*#__PURE__*/React.createElement("label", {
-    style: {
-      display: "flex",
-      flexDirection: "column",
+      display: "grid",
+      gridTemplateColumns: "repeat(8,1fr)",
       gap: 6,
-      fontSize: 11.5,
-      fontWeight: 700,
-      color: C.gray
+      opacity: quad ? 1 : 0.4,
+      pointerEvents: quad ? "auto" : "none"
     }
-  }, "1의 자리", /*#__PURE__*/React.createElement("select", {
-    value: ones,
-    onChange: e => setOnes(Number(e.target.value)),
-    "aria-label": "치식 1의 자리",
-    style: {
-      width: "100%",
-      padding: "12px 10px",
-      borderRadius: 12,
-      fontFamily: FONT,
-      fontSize: 15,
-      fontWeight: 800,
-      color: C.text,
-      background: C.card,
-      border: `1.5px solid ${C.border}`
-    }
-  }, [1, 2, 3, 4, 5, 6, 7, 8].map(n => /*#__PURE__*/React.createElement("option", {
-    key: n,
-    value: n
-  }, n))))), /*#__PURE__*/React.createElement("button", {
-    className: "chip",
-    onClick: addTooth,
-    disabled: toothAlreadySelected,
-    style: {
-      width: "100%",
-      padding: "12px 0",
-      borderRadius: 12,
-      fontSize: 13.5,
-      fontWeight: 800,
-      background: toothAlreadySelected ? C.blueSoft : C.blue,
-      color: toothAlreadySelected ? C.blueDark : "#fff",
-      border: `1.5px solid ${toothAlreadySelected ? C.blueSoft : C.blue}`,
-      marginBottom: 9
-    }
-  }, "#", selectedTooth, toothAlreadySelected ? " 선택됨" : " 추가"), /*#__PURE__*/React.createElement("div", {
+  }, [1, 2, 3, 4, 5, 6, 7, 8].map(n => {
+    const num = quad ? quad * 10 + n : n;
+    const on = quad && teeth.includes(num);
+    return /*#__PURE__*/React.createElement("button", {
+      key: n,
+      className: "chip",
+      onClick: () => addTooth(n),
+      style: {
+        aspectRatio: "1",
+        minWidth: 0,
+        borderRadius: 10,
+        fontSize: 15,
+        fontWeight: 800,
+        background: on ? C.blue : C.card,
+        color: on ? "#fff" : C.text,
+        border: `1.5px solid ${on ? C.blue : C.border}`
+      }
+    }, n);
+  })), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 11,
       color: C.gray,
+      marginTop: 9,
       lineHeight: 1.5
     }
-  }, "각 숫자 칸을 눌러 스크롤로 선택하세요 · 선택된 치식은 위에서 삭제할 수 있어요")));
+  }, "1 앞니 · 2 측절치 · 3 송곳니 · 4·5 작은어금니 · 6·7 큰어금니 · 8 사랑니")));
 }
 
 /* ══════════ 탭2: 환자 등록 ══════════ */
