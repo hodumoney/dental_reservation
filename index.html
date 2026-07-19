@@ -372,7 +372,9 @@ async function apiPost(cfg, payload) {
 function ClinicApp() {
   const [tab, setTab] = useState(0);
   const [appts, setAppts] = useState(seed);
+  const apptsRef = useRef(seed);
   const [dayStatus, setDayStatus] = useState({}); // { "2026-07-18": "신환", ... }
+  const dayStatusRef = useRef({});
   const [selDate, setSelDate] = useState(T);
   const [prefill, setPrefill] = useState(null);
   const [toast, setToast] = useState(null);
@@ -404,7 +406,8 @@ function ClinicApp() {
   const mergePending = serverAppts => {
     const pend = pendingRef.current;
     const map = {};
-    (serverAppts || []).forEach(a => {
+    // 취소행은 시트 기록으로 남겨 두되 실제 예약 화면에는 다시 나타나지 않게 한다.
+    (serverAppts || []).filter(a => !a.cancelled).forEach(a => {
       map[String(a.id)] = a;
     });
     Object.keys(pend).forEach(id => {
@@ -434,8 +437,12 @@ function ClinicApp() {
     try {
       const data = await apiGet(cfg);
       if (data && data.ok) {
-        setAppts(mergePending(Array.isArray(data.appts) ? data.appts : []));
-        setDayStatus(mergePendingDay(data.dayStatus || {}));
+        const nextAppts = mergePending(Array.isArray(data.appts) ? data.appts : []);
+        const nextDayStatus = mergePendingDay(data.dayStatus || {});
+        apptsRef.current = nextAppts;
+        dayStatusRef.current = nextDayStatus;
+        setAppts(nextAppts);
+        setDayStatus(nextDayStatus);
         setSyncState(Object.keys(pendingRef.current).length ? "saving" : "ok");
       } else {
         setSyncState("error");
@@ -522,7 +529,9 @@ function ClinicApp() {
       sent: "",
       careSent: ""
     };
-    setAppts(p => [...p, item]);
+    const next = [...apptsRef.current, item];
+    apptsRef.current = next;
+    setAppts(next);
     push({
       action: "add",
       appt: item
@@ -530,48 +539,55 @@ function ClinicApp() {
     return item;
   };
   const updateAppt = (id, patch) => {
-    let updated = null;
-    setAppts(p => p.map(a => {
-      if (a.id !== id) return a;
-      updated = {
-        ...a,
-        ...patch,
-        surgery: (patch.items || a.items).some(i => i.cat === "수술")
-      };
-      return updated;
-    }));
-    if (updated) push({
+    const current = apptsRef.current.find(a => a.id === id);
+    if (!current) return;
+    const nextDate = patch.date !== undefined ? patch.date : current.date;
+    const nextTimes = patch.times !== undefined ? patch.times : current.times;
+    const scheduleChanged = nextDate !== current.date || normTimes({
+      times: nextTimes
+    }).join(",") !== normTimes(current).join(",");
+    const updated = {
+      ...current,
+      ...patch,
+      sent: scheduleChanged ? "" : current.sent,
+      surgery: (patch.items || current.items).some(i => i.cat === "수술")
+    };
+    const next = apptsRef.current.map(a => a.id === id ? updated : a);
+    apptsRef.current = next;
+    setAppts(next);
+    push({
       action: "update",
       appt: updated
     });
   };
   const removeAppt = id => {
-    setAppts(p => p.filter(a => a.id !== id));
+    const next = apptsRef.current.filter(a => a.id !== id);
+    apptsRef.current = next;
+    setAppts(next);
     push({
       action: "cancel",
       id
     }); // 취소=보존(리마인더 제외), 완전삭제는 delete
   };
   const setStatus = (ds, st) => {
-    let next;
-    setDayStatus(m => {
-      next = m[ds] === st ? undefined : st;
-      return {
-        ...m,
-        [ds]: next
-      };
-    });
+    const nextValue = dayStatusRef.current[ds] === st ? undefined : st;
+    const next = {
+      ...dayStatusRef.current,
+      [ds]: nextValue
+    };
+    dayStatusRef.current = next;
+    setDayStatus(next);
     push({
       action: "setDayStatus",
       date: ds,
-      status: dayStatus[ds] === st ? "" : st
+      status: nextValue || ""
     });
   };
   // 환자 정보(번호·연락처) 일괄 수정: 해당 환자의 모든 예약에 반영
   const editPatientInfo = (p, patch) => {
     const key = p.chartNo || p.name;
     const updates = [];
-    setAppts(prev => prev.map(a => {
+    const next = apptsRef.current.map(a => {
       const aKey = a.chartNo || a.name;
       if (aKey !== key) return a;
       const merged = {
@@ -580,7 +596,9 @@ function ClinicApp() {
       };
       updates.push(merged);
       return merged;
-    }));
+    });
+    apptsRef.current = next;
+    setAppts(next);
     updates.forEach(u => push({
       action: "update",
       appt: u
@@ -590,36 +608,36 @@ function ClinicApp() {
     date,
     startTime
   }) => {
-    let moved = null;
-    setAppts(p => {
-      const target = p.find(a => a.id === id);
-      if (!target) return p;
-      const newDate = date || target.date;
-      let newTimes = target.times;
-      if (startTime) {
-        const dur = target.times.length;
-        const startIdx = SLOTS.all.indexOf(startTime);
-        const sliced = SLOTS.all.slice(startIdx, startIdx + dur);
-        newTimes = sliced.length ? sliced : [startTime];
-      }
-      const newStart = [...newTimes].sort()[0];
-      // 같은 날짜·같은 시작시간에 이미 몇 명인지 (자기 제외, 취소 제외)
-      const sameSlot = p.filter(a => a.id !== id && !a.cancelled && a.date === newDate && normTimes(a)[0] === newStart);
-      if (sameSlot.length >= 3) {
-        showToast("이 시간대는 최대 3명까지예요");
-        return p;
-      }
-      return p.map(a => {
-        if (a.id !== id) return a;
-        moved = {
-          ...a,
-          date: newDate,
-          times: newTimes
-        };
-        return moved;
-      });
-    });
-    if (moved) push({
+    const current = apptsRef.current;
+    const target = current.find(a => a.id === id);
+    if (!target) return;
+    const newDate = date || target.date;
+    let newTimes = target.times;
+    if (startTime) {
+      const dur = target.times.length;
+      const startIdx = SLOTS.all.indexOf(startTime);
+      const sliced = SLOTS.all.slice(startIdx, startIdx + dur);
+      newTimes = sliced.length ? sliced : [startTime];
+    }
+    const newStart = [...newTimes].sort()[0];
+    // 같은 날짜·같은 시작시간에 이미 몇 명인지 (자기 제외, 취소 제외)
+    const sameSlot = current.filter(a => a.id !== id && !a.cancelled && a.date === newDate && normTimes(a)[0] === newStart);
+    if (sameSlot.length >= 3) {
+      showToast("이 시간대는 최대 3명까지예요");
+      return;
+    }
+    const moved = {
+      ...target,
+      date: newDate,
+      times: newTimes,
+      sent: newDate !== target.date || normTimes({
+        times: newTimes
+      }).join(",") !== normTimes(target).join(",") ? "" : target.sent
+    };
+    const next = current.map(a => a.id === id ? moved : a);
+    apptsRef.current = next;
+    setAppts(next);
+    push({
       action: "update",
       appt: moved
     });
@@ -2484,11 +2502,25 @@ function ProcPicker({
   const procs = draft.procs || [];
   const isSelected = name => procs.some(p => p.proc === name);
   const getProc = name => procs.find(p => p.proc === name);
-  const pickCat = c => setDraft(d => ({
-    ...d,
-    cat: d.cat === c ? "" : c,
-    procs: d.cat === c ? [] : []
-  }));
+  const makeProc = name => ({
+    proc: name,
+    steps: [],
+    step: null,
+    kinds: [],
+    custom: ""
+  });
+  const pickCat = c => setDraft(d => {
+    if (d.cat === c) return {
+      ...d,
+      cat: "",
+      procs: []
+    };
+    return {
+      ...d,
+      cat: c,
+      procs: c === "직접입력" ? [makeProc("직접입력")] : []
+    };
+  });
 
   // 술식 토글 (다중). 새로 켜면 기본 상세값 세팅
   const toggleProc = name => setDraft(d => {
@@ -2497,16 +2529,9 @@ function ProcPicker({
       ...d,
       procs: cur.filter(p => p.proc !== name)
     };
-    const np = {
-      proc: name,
-      steps: [],
-      step: null,
-      kinds: [],
-      custom: ""
-    };
     return {
       ...d,
-      procs: [...cur, np]
+      procs: [...cur, makeProc(name)]
     };
   });
   // 특정 술식의 상세 갱신
@@ -2564,7 +2589,7 @@ function ProcPicker({
         border: `1.5px solid ${on ? cs.color : "transparent"}`
       }
     }, c);
-  })), cat && /*#__PURE__*/React.createElement("div", {
+  })), cat && cat !== "직접입력" && /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       flexWrap: "wrap",
@@ -2617,7 +2642,8 @@ function ProcPicker({
       onChange: e => updProc(p.proc, {
         custom: e.target.value
       }),
-      placeholder: "예: 지르코니아 크라운, 임시 접착 등",
+      "aria-label": "직접 입력",
+      autoFocus: true,
       style: {
         ...inp,
         background: "#fff"
@@ -2785,13 +2811,12 @@ function ToothPad({
   onArch,
   compact
 }) {
-  const [quad, setQuad] = useState(null); // 선택한 사분면 code (1~4)
-
-  const addTooth = n => {
-    // n: 1~8
-    if (!quad) return;
-    const num = quad * 10 + n;
-    if (!teeth.includes(num)) onToggle(num);
+  const [tens, setTens] = useState(1);
+  const [ones, setOnes] = useState(1);
+  const selectedTooth = tens * 10 + ones;
+  const toothAlreadySelected = teeth.includes(selectedTooth);
+  const addTooth = () => {
+    if (!toothAlreadySelected) onToggle(selectedTooth);
   };
   return /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
     style: {
@@ -2867,75 +2892,89 @@ function ToothPad({
       color: C.gray,
       marginBottom: 7
     }
-  }, "① 부위 선택"), /*#__PURE__*/React.createElement("div", {
+  }, "치식 선택"), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "grid",
       gridTemplateColumns: "1fr 1fr",
-      gap: 6,
-      marginBottom: 14
+      gap: 8,
+      marginBottom: 10
     }
-  }, QUADRANTS.map(q => {
-    const on = quad === q.code;
-    return /*#__PURE__*/React.createElement("button", {
-      key: q.code,
-      className: "chip",
-      onClick: () => setQuad(on ? null : q.code),
-      style: {
-        padding: "12px 0",
-        borderRadius: 12,
-        fontSize: 13.5,
-        fontWeight: 700,
-        background: on ? C.blue : C.card,
-        color: on ? "#fff" : C.text,
-        border: `1.5px solid ${on ? C.blue : C.border}`
-      }
-    }, q.label, " ", /*#__PURE__*/React.createElement("span", {
-      style: {
-        fontSize: 11,
-        opacity: .7
-      }
-    }, "(", q.code, "0번대)"));
-  })), /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement("label", {
     style: {
+      display: "flex",
+      flexDirection: "column",
+      gap: 6,
       fontSize: 11.5,
       fontWeight: 700,
-      color: C.gray,
-      marginBottom: 7
+      color: C.gray
     }
-  }, "② 치아 번호 ", quad ? `(${quad}0번대)` : ""), /*#__PURE__*/React.createElement("div", {
+  }, "10의 자리", /*#__PURE__*/React.createElement("select", {
+    value: tens,
+    onChange: e => setTens(Number(e.target.value)),
+    "aria-label": "치식 10의 자리",
     style: {
-      display: "grid",
-      gridTemplateColumns: "repeat(8,1fr)",
-      gap: 6,
-      opacity: quad ? 1 : 0.4,
-      pointerEvents: quad ? "auto" : "none"
+      width: "100%",
+      padding: "12px 10px",
+      borderRadius: 12,
+      fontFamily: FONT,
+      fontSize: 15,
+      fontWeight: 800,
+      color: C.text,
+      background: C.card,
+      border: `1.5px solid ${C.border}`
     }
-  }, [1, 2, 3, 4, 5, 6, 7, 8].map(n => {
-    const num = quad ? quad * 10 + n : n;
-    const on = quad && teeth.includes(num);
-    return /*#__PURE__*/React.createElement("button", {
-      key: n,
-      className: "chip",
-      onClick: () => addTooth(n),
-      style: {
-        aspectRatio: "1",
-        minWidth: 0,
-        borderRadius: 10,
-        fontSize: 15,
-        fontWeight: 800,
-        background: on ? C.blue : C.card,
-        color: on ? "#fff" : C.text,
-        border: `1.5px solid ${on ? C.blue : C.border}`
-      }
-    }, n);
-  })), /*#__PURE__*/React.createElement("div", {
+  }, QUADRANTS.map(q => /*#__PURE__*/React.createElement("option", {
+    key: q.code,
+    value: q.code
+  }, q.code, " · ", q.label)))), /*#__PURE__*/React.createElement("label", {
+    style: {
+      display: "flex",
+      flexDirection: "column",
+      gap: 6,
+      fontSize: 11.5,
+      fontWeight: 700,
+      color: C.gray
+    }
+  }, "1의 자리", /*#__PURE__*/React.createElement("select", {
+    value: ones,
+    onChange: e => setOnes(Number(e.target.value)),
+    "aria-label": "치식 1의 자리",
+    style: {
+      width: "100%",
+      padding: "12px 10px",
+      borderRadius: 12,
+      fontFamily: FONT,
+      fontSize: 15,
+      fontWeight: 800,
+      color: C.text,
+      background: C.card,
+      border: `1.5px solid ${C.border}`
+    }
+  }, [1, 2, 3, 4, 5, 6, 7, 8].map(n => /*#__PURE__*/React.createElement("option", {
+    key: n,
+    value: n
+  }, n))))), /*#__PURE__*/React.createElement("button", {
+    className: "chip",
+    onClick: addTooth,
+    disabled: toothAlreadySelected,
+    style: {
+      width: "100%",
+      padding: "12px 0",
+      borderRadius: 12,
+      fontSize: 13.5,
+      fontWeight: 800,
+      background: toothAlreadySelected ? C.blueSoft : C.blue,
+      color: toothAlreadySelected ? C.blueDark : "#fff",
+      border: `1.5px solid ${toothAlreadySelected ? C.blueSoft : C.blue}`,
+      marginBottom: 9
+    }
+  }, "#", selectedTooth, toothAlreadySelected ? " 선택됨" : " 추가"), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 11,
       color: C.gray,
-      marginTop: 9,
       lineHeight: 1.5
     }
-  }, "1 앞니 · 2 측절치 · 3 송곳니 · 4·5 작은어금니 · 6·7 큰어금니 · 8 사랑니")));
+  }, "각 숫자 칸을 눌러 스크롤로 선택하세요 · 선택된 치식은 위에서 삭제할 수 있어요")));
 }
 
 /* ══════════ 탭2: 환자 등록 ══════════ */
@@ -4045,24 +4084,46 @@ function ToothChart({
   }, "치식이 기록된 치료 이력이 없어요"));
 }
 
+/* 문자 발송기록 문자열 → 화면 상태 */
+function smsSendState(value) {
+  if (value === true || String(value).toUpperCase() === "TRUE") return "done";
+  const text = String(value || "").trim();
+  if (text.indexOf("발송완료") === 0) return "done";
+  if (text.indexOf("실패:") === 0) return "failed";
+  return "pending";
+}
+
 /* ══════════ 탭3: 문자 발송 현황 ══════════ */
 function SmsTab({
   appts,
   onAttend
 }) {
-  const rows = useMemo(() => sortAppts([...appts]).map(a => {
-    const type = a.surgery ? "술 후 주의사항" : "예약 리마인더";
-    const when = a.surgery ? `${krDate(a.date)} 저녁 7:00` : `${krDate(shiftDate(a.date, -1))} 오후 2:00`;
-    return {
+  const rows = useMemo(() => {
+    const ordered = sortAppts([...appts]);
+    const reminders = ordered.map(a => ({
       ...a,
-      smsType: type,
-      when
-    };
-  }), [appts]);
-  const done = rows.filter(r => r.sent);
-  const waitReminder = rows.filter(r => !r.sent && !r.surgery);
-  const waitCare = rows.filter(r => !r.sent && r.surgery && r.attended);
-  const heldCare = rows.filter(r => !r.sent && r.surgery && !r.attended);
+      smsKey: `${a.id}-reminder`,
+      smsKind: "reminder",
+      smsType: "예약 리마인더",
+      sendRecord: a.sent,
+      sendState: smsSendState(a.sent),
+      when: `${krDate(shiftDate(a.date, -1))} 오후 2:00`
+    }));
+    const care = ordered.filter(a => a.surgery).map(a => ({
+      ...a,
+      smsKey: `${a.id}-care`,
+      smsKind: "care",
+      smsType: "술 후 주의사항",
+      sendRecord: a.careSent,
+      sendState: smsSendState(a.careSent),
+      when: `${krDate(a.date)} 저녁 7:00`
+    }));
+    return [...reminders, ...care];
+  }, [appts]);
+  const done = rows.filter(r => r.sendState === "done");
+  const waitReminder = rows.filter(r => r.smsKind === "reminder" && r.sendState !== "done");
+  const waitCare = rows.filter(r => r.smsKind === "care" && r.sendState !== "done" && r.attended);
+  const heldCare = rows.filter(r => r.smsKind === "care" && r.sendState !== "done" && !r.attended);
   return /*#__PURE__*/React.createElement("section", null, /*#__PURE__*/React.createElement("div", {
     style: {
       display: "grid",
@@ -4141,7 +4202,7 @@ function SmsTab({
       gap: 8
     }
   }, done.map(r => /*#__PURE__*/React.createElement(SmsRow, {
-    key: r.id,
+    key: r.smsKey,
     r: r
   })))), /*#__PURE__*/React.createElement("p", {
     style: {
@@ -4202,7 +4263,7 @@ function SmsColumn({
       gap: 8
     }
   }, rows.map(r => /*#__PURE__*/React.createElement(SmsRow, {
-    key: r.id,
+    key: r.smsKey,
     r: r,
     onAttend: onAttend
   }))), held && held.length > 0 && /*#__PURE__*/React.createElement("div", {
@@ -4225,7 +4286,7 @@ function SmsColumn({
       gap: 8
     }
   }, held.map(r => /*#__PURE__*/React.createElement(SmsRow, {
-    key: r.id,
+    key: r.smsKey,
     r: r,
     held: true,
     onAttend: onAttend
@@ -4236,6 +4297,8 @@ function SmsRow({
   held,
   onAttend
 }) {
+  const done = r.sendState === "done";
+  const failed = r.sendState === "failed";
   return /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
@@ -4274,7 +4337,7 @@ function SmsRow({
       color: C.gray,
       marginTop: 2
     }
-  }, "발송 예정 · ", r.when)), r.surgery && !r.sent && onAttend && /*#__PURE__*/React.createElement("button", {
+  }, "발송 예정 · ", r.when)), r.smsKind === "care" && !done && onAttend && /*#__PURE__*/React.createElement("button", {
     onClick: () => onAttend(r.id, !r.attended),
     className: "chip",
     style: {
@@ -4290,11 +4353,11 @@ function SmsRow({
     }
   }, r.attended ? "내원" : "미내원"), /*#__PURE__*/React.createElement("span", {
     style: {
-      ...pill(r.sent ? C.greenSoft : held ? "#EEF0F2" : C.orangeSoft, r.sent ? C.green : held ? C.gray : C.orange),
+      ...pill(done ? C.greenSoft : failed ? C.redSoft : held ? "#EEF0F2" : C.orangeSoft, done ? C.green : failed ? C.red : held ? C.gray : C.orange),
       fontWeight: 700,
       flexShrink: 0
     }
-  }, r.sent ? "완료" : held ? "보류" : "대기"));
+  }, done ? "완료" : failed ? "실패" : held ? "보류" : "대기"));
 }
 
 /* ══════════ 공용 ══════════ */
