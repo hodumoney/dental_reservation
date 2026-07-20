@@ -2779,20 +2779,16 @@ const ARCHES = ["전악", "상악", "하악", "턱관절"];
 /* 사분면(십의 자리) 정의 — FDI 표기 */
 const QUADRANTS = [{
   code: 1,
-  label: "우측 위",
-  side: "상악"
+  label: "10번대"
 }, {
   code: 2,
-  label: "좌측 위",
-  side: "상악"
-}, {
-  code: 4,
-  label: "우측 아래",
-  side: "하악"
+  label: "20번대"
 }, {
   code: 3,
-  label: "좌측 아래",
-  side: "하악"
+  label: "30번대"
+}, {
+  code: 4,
+  label: "40번대"
 }];
 function ToothPad({
   teeth,
@@ -2879,7 +2875,7 @@ function ToothPad({
   }, "✕")))), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "grid",
-      gridTemplateColumns: "minmax(0,1.1fr) minmax(0,1fr)",
+      gridTemplateColumns: "minmax(0,1fr) minmax(0,1.4fr)",
       gap: 12,
       alignItems: "start"
     }
@@ -2903,21 +2899,15 @@ function ToothPad({
       className: "chip",
       onClick: () => setQuad(on ? null : q.code),
       style: {
-        padding: "12px 2px",
+        height: 44,
         borderRadius: 11,
-        fontSize: 12.5,
-        fontWeight: 700,
-        lineHeight: 1.25,
+        fontSize: 13,
+        fontWeight: 800,
         background: on ? C.blue : C.card,
         color: on ? "#fff" : C.text,
         border: `1.5px solid ${on ? C.blue : C.border}`
       }
-    }, q.label, /*#__PURE__*/React.createElement("br", null), /*#__PURE__*/React.createElement("span", {
-      style: {
-        fontSize: 10.5,
-        opacity: .7
-      }
-    }, q.code, "0번대"));
+    }, q.label);
   }))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 11.5,
@@ -2941,7 +2931,7 @@ function ToothPad({
       className: "chip",
       onClick: () => addTooth(n),
       style: {
-        aspectRatio: "1",
+        height: 44,
         minWidth: 0,
         borderRadius: 10,
         fontSize: 15,
