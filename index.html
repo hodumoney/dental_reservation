@@ -3559,23 +3559,6 @@ const FLAGS = {
     soft: C.orangeSoft
   }
 };
-/* 부위별 치료 이력 집계용: 치식별로 어떤 진료를 받았는지 */
-const buildToothHistory = past => {
-  const hist = {}; // toothNumber -> [{date, label}]
-  past.forEach(v => {
-    v.items.forEach(it => {
-      const label = procFull(it);
-      const teeth = it.teeth && it.teeth.length ? it.teeth : [];
-      teeth.forEach(t => {
-        (hist[t] || (hist[t] = [])).push({
-          date: v.date,
-          label
-        });
-      });
-    });
-  });
-  return hist;
-};
 
 /* 환자 정보(번호·연락처) 인라인 수정 */
 function PatientInfoEditor({
@@ -3664,6 +3647,7 @@ function PatientListTab({
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState("전체");
   const [openId, setOpenId] = useState(null);
+  const [editInfoId, setEditInfoId] = useState(null);
 
   // 환자별(chartNo) 집계
   const patients = useMemo(() => {
@@ -3694,7 +3678,6 @@ function PatientListTab({
         const daysSince = Math.floor((parseISO(T) - parseISO(last.date)) / 86400000);
         if (daysSince > 30) flag = "미내원";
       }
-      const toothHist = buildToothHistory(attendedPast);
       return {
         key,
         ...rec,
@@ -3702,8 +3685,7 @@ function PatientListTab({
         up,
         last,
         next,
-        flag,
-        toothHist
+        flag
       };
     });
     return list.sort((a, b) => a.name.localeCompare(b.name, "ko")); // ㄱㄴㄷ
@@ -3857,10 +3839,32 @@ function PatientListTab({
         paddingTop: 14,
         borderTop: `1px solid ${C.line}`
       }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        marginBottom: 16
+      }
+    }, /*#__PURE__*/React.createElement("button", {
+      className: "chip",
+      onClick: () => setEditInfoId(editInfoId === p.key ? null : p.key),
+      style: {
+        padding: "9px 14px",
+        borderRadius: 11,
+        background: editInfoId === p.key ? C.blue : C.bg,
+        color: editInfoId === p.key ? "#fff" : C.sub,
+        fontSize: 13,
+        fontWeight: 700
+      }
+    }, editInfoId === p.key ? "정보 수정 닫기" : "환자 정보 수정"), editInfoId === p.key && /*#__PURE__*/React.createElement("div", {
+      style: {
+        marginTop: 12
+      }
     }, /*#__PURE__*/React.createElement(PatientInfoEditor, {
       p: p,
-      onSave: onEditPatient
-    }), /*#__PURE__*/React.createElement(FieldLabel, null, "이전 진료 내역 (", p.past.length, "회)"), p.past.length === 0 ? /*#__PURE__*/React.createElement("div", {
+      onSave: (pp, patch) => {
+        onEditPatient(pp, patch);
+        setEditInfoId(null);
+      }
+    }))), /*#__PURE__*/React.createElement(FieldLabel, null, "이전 진료 내역 (", p.past.length, "회)"), p.past.length === 0 ? /*#__PURE__*/React.createElement("div", {
       style: {
         fontSize: 12.5,
         color: C.gray,
@@ -3906,11 +3910,7 @@ function PatientListTab({
           flexShrink: 0
         }
       }, "미내원"));
-    })), /*#__PURE__*/React.createElement(FieldLabel, {
-      hint: "색칠된 치아를 누르면 치료 내역이 보여요"
-    }, "치아별 치료 현황"), /*#__PURE__*/React.createElement(ToothChart, {
-      hist: p.toothHist
-    }), /*#__PURE__*/React.createElement("div", {
+    })), /*#__PURE__*/React.createElement("div", {
       style: {
         display: "flex",
         alignItems: "center",
@@ -3969,107 +3969,6 @@ function PatientListTab({
       }
     }, v.items.map(itemLabel).join(", ")))))));
   })));
-}
-
-/* 치아 차트: 치료받은 치아는 색칠, 클릭 시 내역 표시 */
-function ToothChart({
-  hist
-}) {
-  const [sel, setSel] = useState(null);
-  const treated = t => hist[t] && hist[t].length > 0;
-  const Row = ({
-    teeth
-  }) => /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "grid",
-      gridTemplateColumns: "repeat(16,minmax(0,1fr))",
-      gap: 3,
-      width: "100%"
-    }
-  }, teeth.map(t => {
-    const on = treated(t);
-    const isSel = sel === t;
-    return /*#__PURE__*/React.createElement("button", {
-      key: t,
-      className: "tooth toothbtn",
-      onClick: () => on && setSel(isSel ? null : t),
-      style: {
-        aspectRatio: "1",
-        minWidth: 0,
-        padding: 0,
-        borderRadius: 6,
-        fontSize: 11,
-        fontWeight: 700,
-        lineHeight: 1,
-        cursor: on ? "pointer" : "default",
-        background: isSel ? C.blueDark : on ? C.blue : C.card,
-        color: on || isSel ? "#fff" : C.gray,
-        border: `1px solid ${on ? C.blue : C.border}`,
-        opacity: on ? 1 : 0.55
-      }
-    }, t);
-  }));
-  return /*#__PURE__*/React.createElement("div", {
-    style: {
-      background: C.bg,
-      borderRadius: 16,
-      padding: 14
-    }
-  }, /*#__PURE__*/React.createElement(Row, {
-    teeth: TEETH_UPPER
-  }), /*#__PURE__*/React.createElement("div", {
-    style: {
-      height: 1,
-      background: C.border,
-      margin: "10px 0"
-    }
-  }), /*#__PURE__*/React.createElement(Row, {
-    teeth: TEETH_LOWER
-  }), sel && hist[sel] && /*#__PURE__*/React.createElement("div", {
-    style: {
-      marginTop: 12,
-      background: C.card,
-      borderRadius: 12,
-      padding: "12px 14px"
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 13,
-      fontWeight: 800,
-      color: C.blueDark,
-      marginBottom: 8
-    }
-  }, "#", sel, " 치료 내역"), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      flexDirection: "column",
-      gap: 6
-    }
-  }, hist[sel].slice().sort((a, b) => a.date.localeCompare(b.date)).map((h, i) => /*#__PURE__*/React.createElement("div", {
-    key: i,
-    style: {
-      display: "flex",
-      gap: 10,
-      fontSize: 12.5
-    }
-  }, /*#__PURE__*/React.createElement("span", {
-    style: {
-      fontWeight: 700,
-      color: C.sub,
-      flexShrink: 0
-    }
-  }, krDate(h.date).split(" (")[0]), /*#__PURE__*/React.createElement("span", {
-    style: {
-      color: C.sub
-    }
-  }, h.label))))), Object.keys(hist).length === 0 && /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 12,
-      color: C.gray,
-      textAlign: "center",
-      marginTop: 10
-    }
-  }, "치식이 기록된 치료 이력이 없어요"));
 }
 
 /* ══════════ 탭3: 문자 발송 현황 ══════════ */
