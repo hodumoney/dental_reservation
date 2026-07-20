@@ -400,16 +400,16 @@ function ClinicApp() {
     toastRef.current = setTimeout(() => setToast(null), 2600);
   };
 
-  // 서버 데이터에 "내 대기 변경"을 덮어씌워 병합 (입력분 보존)
+  // 서버 데이터에 "내 대기 변경"을 덮어씌워 병합 (입력분 보존, 취소건 제외)
   const mergePending = serverAppts => {
     const pend = pendingRef.current;
     const map = {};
     (serverAppts || []).forEach(a => {
-      map[String(a.id)] = a;
-    });
+      if (!a.cancelled) map[String(a.id)] = a;
+    }); // 취소 예약은 표시 안 함
     Object.keys(pend).forEach(id => {
       const v = pend[id];
-      if (v && v.__deleted) delete map[id];else if (v) map[id] = v; // 내 최신 로컬본 우선
+      if (v && (v.__deleted || v.cancelled)) delete map[id];else if (v) map[id] = v; // 내 최신 로컬본 우선
     });
     return Object.values(map);
   };
