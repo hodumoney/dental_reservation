@@ -2779,16 +2779,16 @@ const ARCHES = ["전악", "상악", "하악", "턱관절"];
 /* 사분면(십의 자리) 정의 — FDI 표기 */
 const QUADRANTS = [{
   code: 1,
-  label: "10번대"
+  label: "10"
 }, {
   code: 2,
-  label: "20번대"
+  label: "20"
 }, {
   code: 3,
-  label: "30번대"
+  label: "30"
 }, {
   code: 4,
-  label: "40번대"
+  label: "40"
 }];
 function ToothPad({
   teeth,
@@ -2886,7 +2886,7 @@ function ToothPad({
       color: C.gray,
       marginBottom: 7
     }
-  }, "① 부위"), /*#__PURE__*/React.createElement("div", {
+  }, "① 부위(번대)"), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "grid",
       gridTemplateColumns: "1fr 1fr",
@@ -2901,8 +2901,9 @@ function ToothPad({
       style: {
         height: 44,
         borderRadius: 11,
-        fontSize: 13,
+        fontSize: 15,
         fontWeight: 800,
+        whiteSpace: "nowrap",
         background: on ? C.blue : C.card,
         color: on ? "#fff" : C.text,
         border: `1.5px solid ${on ? C.blue : C.border}`
@@ -4515,6 +4516,9 @@ function GlobalStyle() {
       .card-pad{padding:16px!important}
       .day-axis{width:40px!important}
       .toast{left:12px!important;right:12px!important;transform:none!important;text-align:center;white-space:normal}
+      /* iOS 입력 시 자동 확대 방지 (16px 이상 유지) */
+      input,textarea,select{font-size:16px!important}
+      h2{font-size:15.5px!important}
       /* 월간: 칸 넘침 방지 + 상태버튼 축소 */
       .mdaycell{padding:5px 4px 5px!important;min-height:92px!important}
       .mday-num{font-size:12px!important;width:19px!important;height:19px!important}
