@@ -3685,7 +3685,8 @@ function PatientListTab({
     const list = Object.entries(map).map(([key, rec]) => {
       const past = rec.visits.sort((x, y) => x.date.localeCompare(y.date)); // 오름차순
       const up = rec.upcoming.sort((x, y) => x.date.localeCompare(y.date)); // 오름차순
-      const last = past[past.length - 1];
+      const attendedPast = past.filter(v => !(v.attendMarked && !v.attended));
+      const last = attendedPast[attendedPast.length - 1]; // 실제 내원한 마지막 건
       const next = up[0];
       // 상태 자동 판정: 추후 예약 있으면 진행 중, 없고 마지막 내원 30일 초과면 미내원
       let flag = "진행 중";
@@ -3693,7 +3694,7 @@ function PatientListTab({
         const daysSince = Math.floor((parseISO(T) - parseISO(last.date)) / 86400000);
         if (daysSince > 30) flag = "미내원";
       }
-      const toothHist = buildToothHistory(past);
+      const toothHist = buildToothHistory(attendedPast);
       return {
         key,
         ...rec,
@@ -3872,28 +3873,40 @@ function PatientListTab({
         gap: 6,
         marginBottom: 16
       }
-    }, p.past.map(v => /*#__PURE__*/React.createElement("div", {
-      key: v.id,
-      style: {
-        display: "flex",
-        gap: 10,
-        fontSize: 12.5,
-        padding: "9px 12px",
-        background: C.bg,
-        borderRadius: 10
-      }
-    }, /*#__PURE__*/React.createElement("span", {
-      style: {
-        fontWeight: 700,
-        color: C.sub,
-        flexShrink: 0
-      }
-    }, krDate(v.date).split(" (")[0]), /*#__PURE__*/React.createElement("span", {
-      style: {
-        color: C.sub,
-        flex: 1
-      }
-    }, v.items.map(itemLabel).join(", "))))), /*#__PURE__*/React.createElement(FieldLabel, {
+    }, p.past.map(v => {
+      const noShow = v.attendMarked && !v.attended;
+      return /*#__PURE__*/React.createElement("div", {
+        key: v.id,
+        style: {
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          fontSize: 12.5,
+          padding: "9px 12px",
+          background: noShow ? C.orangeSoft : C.bg,
+          borderRadius: 10
+        }
+      }, /*#__PURE__*/React.createElement("span", {
+        style: {
+          fontWeight: 700,
+          color: noShow ? C.orange : C.sub,
+          flexShrink: 0
+        }
+      }, krDate(v.date).split(" (")[0]), /*#__PURE__*/React.createElement("span", {
+        style: {
+          color: noShow ? C.orange : C.sub,
+          flex: 1,
+          textDecoration: noShow ? "line-through" : "none",
+          opacity: noShow ? 0.85 : 1
+        }
+      }, v.items.map(itemLabel).join(", ")), noShow && /*#__PURE__*/React.createElement("span", {
+        style: {
+          ...pill("#fff", C.orange),
+          fontWeight: 800,
+          flexShrink: 0
+        }
+      }, "미내원"));
+    })), /*#__PURE__*/React.createElement(FieldLabel, {
       hint: "색칠된 치아를 누르면 치료 내역이 보여요"
     }, "치아별 치료 현황"), /*#__PURE__*/React.createElement(ToothChart, {
       hist: p.toothHist
