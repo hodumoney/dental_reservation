@@ -225,7 +225,8 @@ const procFull = it => {
   return oneProc(it);
 };
 // 부위 표기: 아치(전악/상악/하악/턱관절) 우선, 없으면 치식. 체크(검진·x-ray)는 부위 생략
-const areaLabel = it => it.cat === "체크" ? "" : it.arch ? it.arch : it.teeth.length ? `#${it.teeth.join(" #")}` : "";
+const toothPrefix = it => it.implant ? "i" : "#";
+const areaLabel = it => it.cat === "체크" ? "" : it.arch ? it.arch : it.teeth.length ? `${toothPrefix(it)}${it.teeth.join(" " + toothPrefix(it))}` : "";
 const itemLabel = it => {
   const a = areaLabel(it);
   return a ? `${a} ${procFull(it)}` : procFull(it);
@@ -319,6 +320,7 @@ const emptyForm = {
   name: "",
   chartNo: "",
   phone: "",
+  phoneHold: false,
   date: T,
   times: [],
   items: []
@@ -2795,10 +2797,12 @@ function ToothPad({
   onToggle,
   arch,
   onArch,
+  implant,
+  onImplant,
   compact
 }) {
   const [quad, setQuad] = useState(null); // 선택한 사분면 code (1~4)
-
+  const pfx = implant ? "i" : "#";
   const addTooth = n => {
     // n: 1~8
     if (!quad) return;
@@ -2811,7 +2815,20 @@ function ToothPad({
       gap: 8,
       marginBottom: 10
     }
-  }, ARCHES.map(key => {
+  }, /*#__PURE__*/React.createElement("button", {
+    className: "chip",
+    onClick: () => onImplant(!implant),
+    style: {
+      flex: "0 0 auto",
+      padding: "11px 14px",
+      borderRadius: 11,
+      fontSize: 13,
+      fontWeight: 800,
+      background: implant ? C.blueDark : C.card,
+      color: implant ? "#fff" : C.sub,
+      border: `1.5px solid ${implant ? C.blueDark : C.border}`
+    }
+  }, "임플"), ARCHES.map(key => {
     const on = arch === key;
     return /*#__PURE__*/React.createElement("button", {
       key: key,
@@ -2844,7 +2861,14 @@ function ToothPad({
       borderRadius: 16,
       padding: 14
     }
-  }, teeth.length > 0 && /*#__PURE__*/React.createElement("div", {
+  }, implant && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      fontWeight: 700,
+      color: C.blueDark,
+      marginBottom: 10
+    }
+  }, "임플란트 모드 · 선택한 치아는 i로 표시됩니다 (예: i46)"), teeth.length > 0 && /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       flexWrap: "wrap",
@@ -2867,7 +2891,7 @@ function ToothPad({
       color: "#fff",
       border: "none"
     }
-  }, "#", t, " ", /*#__PURE__*/React.createElement("span", {
+  }, pfx, t, " ", /*#__PURE__*/React.createElement("span", {
     style: {
       fontSize: 12,
       opacity: .8
@@ -2969,6 +2993,7 @@ function RegisterTab({
   const [draft, setDraft] = useState({
     teeth: [],
     arch: null,
+    implant: false,
     cat: "",
     procs: []
   });
@@ -3023,7 +3048,7 @@ function RegisterTab({
     setNameMatches([]);
   };
   const draftReady = canAddItem(draft);
-  const valid = form.name.trim() && form.phone.replace(/[^0-9]/g, "").length >= 10 && form.date && form.times.length > 0 && (form.items.length > 0 || draftReady);
+  const valid = form.name.trim() && (form.phoneHold || form.phone.replace(/[^0-9]/g, "").length >= 10) && form.date && form.times.length > 0 && (form.items.length > 0 || draftReady);
   const toggleTime = s => setForm(f => ({
     ...f,
     times: f.times.includes(s) ? f.times.filter(x => x !== s) : [...f.times, s]
@@ -3036,7 +3061,13 @@ function RegisterTab({
   const onArch = arch => setDraft(d => ({
     ...d,
     arch,
-    teeth: []
+    teeth: [],
+    implant: false
+  }));
+  const onImplant = v => setDraft(d => ({
+    ...d,
+    implant: v,
+    arch: null
   }));
   const addItem = () => {
     if (!draftReady) return;
@@ -3045,6 +3076,7 @@ function RegisterTab({
       items: [...f.items, {
         teeth: [...draft.teeth].sort((a, b) => a - b),
         arch: draft.arch || null,
+        implant: !!draft.implant,
         cat: draft.cat,
         procs: (draft.procs || []).map(p => ({
           proc: p.proc,
@@ -3058,6 +3090,7 @@ function RegisterTab({
     setDraft({
       teeth: [],
       arch: null,
+      implant: false,
       cat: "",
       procs: []
     });
@@ -3071,6 +3104,7 @@ function RegisterTab({
     const items = draftReady ? [...form.items, {
       teeth: [...draft.teeth].sort((a, b) => a - b),
       arch: draft.arch || null,
+      implant: !!draft.implant,
       cat: draft.cat,
       procs: (draft.procs || []).map(p => ({
         proc: p.proc,
@@ -3090,6 +3124,7 @@ function RegisterTab({
     setDraft({
       teeth: [],
       arch: null,
+      implant: false,
       cat: "",
       procs: []
     });
@@ -3175,16 +3210,52 @@ function RegisterTab({
     }))
   })), /*#__PURE__*/React.createElement(Field, {
     label: "연락처"
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 8,
+      alignItems: "center"
+    }
   }, /*#__PURE__*/React.createElement("input", {
-    style: inp,
+    style: {
+      ...inp,
+      flex: 1,
+      opacity: form.phoneHold ? 0.5 : 1
+    },
     value: form.phone,
     inputMode: "numeric",
-    placeholder: "010-0000-0000",
+    placeholder: form.phoneHold ? "번호 보류됨" : "010-0000-0000",
+    disabled: form.phoneHold,
     onChange: e => setForm(f => ({
       ...f,
       phone: fmtPhone(e.target.value)
     }))
-  })), /*#__PURE__*/React.createElement(Field, {
+  }), /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    className: "chip",
+    onClick: () => setForm(f => ({
+      ...f,
+      phoneHold: !f.phoneHold,
+      phone: f.phoneHold ? f.phone : ""
+    })),
+    style: {
+      flexShrink: 0,
+      padding: "12px 14px",
+      borderRadius: 12,
+      fontSize: 13,
+      fontWeight: 800,
+      background: form.phoneHold ? C.orange : C.bg,
+      color: form.phoneHold ? "#fff" : C.sub,
+      border: `1.5px solid ${form.phoneHold ? C.orange : C.border}`
+    }
+  }, "번호 보류")), form.phoneHold && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11.5,
+      color: C.orange,
+      fontWeight: 700,
+      marginTop: 6
+    }
+  }, "번호 없이 등록됩니다 · 나중에 환자 리스트에서 입력하세요 (문자 발송 제외)")), /*#__PURE__*/React.createElement(Field, {
     label: "내원 예정일"
   }, /*#__PURE__*/React.createElement(DatePicker, {
     value: form.date,
@@ -3239,7 +3310,9 @@ function RegisterTab({
     teeth: draft.teeth,
     onToggle: toggleTooth,
     arch: draft.arch,
-    onArch: onArch
+    onArch: onArch,
+    implant: draft.implant,
+    onImplant: onImplant
   })), /*#__PURE__*/React.createElement(FieldLabel, {
     hint: "한 환자에 여러 치료를 넣을 수 있어요 (치료 1·2·3)"
   }, "치료 카테고리 · 술식"), /*#__PURE__*/React.createElement(ProcPicker, {
@@ -3346,6 +3419,7 @@ function EditPanel({
   const [draft, setDraft] = useState({
     teeth: [],
     arch: null,
+    implant: false,
     cat: "",
     procs: []
   });
@@ -3358,13 +3432,20 @@ function EditPanel({
   const onArch = arch => setDraft(d => ({
     ...d,
     arch,
-    teeth: []
+    teeth: [],
+    implant: false
+  }));
+  const onImplant = v => setDraft(d => ({
+    ...d,
+    implant: v,
+    arch: null
   }));
   const addItem = () => {
     if (!canAddItem(draft)) return;
     setItems(v => [...v, {
       teeth: [...draft.teeth].sort((a, b) => a - b),
       arch: draft.arch || null,
+      implant: !!draft.implant,
       cat: draft.cat,
       procs: (draft.procs || []).map(p => ({
         proc: p.proc,
@@ -3377,6 +3458,7 @@ function EditPanel({
     setDraft({
       teeth: [],
       arch: null,
+      implant: false,
       cat: "",
       procs: []
     });
@@ -3498,7 +3580,9 @@ function EditPanel({
     teeth: draft.teeth,
     onToggle: toggleTooth,
     arch: draft.arch,
-    onArch: onArch
+    onArch: onArch,
+    implant: draft.implant,
+    onImplant: onImplant
   })), /*#__PURE__*/React.createElement(ProcPicker, {
     draft: draft,
     setDraft: setDraft
